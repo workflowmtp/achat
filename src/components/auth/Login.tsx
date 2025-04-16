@@ -40,6 +40,7 @@ export default function Login() {
       const ADMIN_CODE = "ADMIN1234";
       const USER_CODE = "User1234";  // Accès aux dépenses, tableau de bord, historique, clôture
       const CASHFLOW_CODE = "User12345"; // Accès uniquement aux entrées
+      const PCA_CODE = "pca1234"; // Accès uniquement à l'historique des dépenses
       
       let userRole = '';
       let isAdmin = false;
@@ -54,6 +55,9 @@ export default function Login() {
         localStorage.removeItem('isAdmin');
       } else if (accessCode === CASHFLOW_CODE) {
         userRole = 'cash_inflow';
+        localStorage.removeItem('isAdmin');
+      } else if (accessCode === PCA_CODE) {
+        userRole = 'pca';
         localStorage.removeItem('isAdmin');
       } else {
         setError('Code d\'accès invalide');
@@ -78,8 +82,14 @@ export default function Login() {
         // Continuer même si la mise à jour échoue
       }
       
-      // Redirection vers le tableau de bord
-      navigate('/dashboard');
+      // Redirection basée sur le rôle
+      if (userRole === 'pca') {
+        // Rediriger les utilisateurs PCA directement vers l'historique des dépenses
+        navigate('/expenses/history');
+      } else {
+        // Redirection vers le tableau de bord pour les autres rôles
+        navigate('/dashboard');
+      }
     } catch (err) {
       console.error('Erreur de connexion:', err);
       setError('Email ou mot de passe incorrect');

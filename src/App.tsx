@@ -19,8 +19,11 @@ import ExpenseHistory from './components/ExpenseHistory';
 import Closing from './components/Closing';
 import Users from './components/Users';
 
-function PrivateRoute({ children }: { children: React.ReactNode }) {
+// Route pour les utilisateurs avec des rôles spécifiques (admin, expenses, cash_inflow, pca)
+function RoleBasedRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles: string[] }) {
   const { user, loading } = useAuth();
+  const userRole = localStorage.getItem('userRole') || '';
+  const isAdmin = localStorage.getItem('isAdmin') === 'true';
   
   if (loading) {
     return <div>Chargement...</div>;
@@ -30,22 +33,19 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" />;
   }
   
-  return <Layout>{children}</Layout>;
-}
-
-function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
-  
-  if (loading) {
-    return <div>Chargement...</div>;
+  // Les administrateurs ont accès à tout
+  if (isAdmin) {
+    return <Layout>{children}</Layout>;
   }
   
-  const isAdmin = user?.getIdTokenResult()
-    .then((idTokenResult) => idTokenResult.claims.admin)
-    .catch(() => false);
-  
-  if (!user || !isAdmin) {
-    return <Navigate to="/admin/login" />;
+  // Vérifier si le rôle de l'utilisateur est dans la liste des rôles autorisés
+  if (!allowedRoles.includes(userRole)) {
+    // Rediriger les utilisateurs PCA vers l'historique des dépenses s'ils tentent d'accéder à une autre page
+    if (userRole === 'pca') {
+      return <Navigate to="/expenses/history" />;
+    }
+    // Rediriger les autres utilisateurs vers le tableau de bord
+    return <Navigate to="/dashboard" />;
   }
   
   return <Layout>{children}</Layout>;
@@ -64,85 +64,89 @@ function App() {
           <Route
             path="/dashboard"
             element={
-              <PrivateRoute>
+              <RoleBasedRoute allowedRoles={['admin', 'expenses', 'pca']}>
                 <Dashboard />
-              </PrivateRoute>
+              </RoleBasedRoute>
             }
           />
           <Route
             path="/projects"
             element={
-              <PrivateRoute>
+              <RoleBasedRoute allowedRoles={['admin']}>
                 <Projects />
-              </PrivateRoute>
+              </RoleBasedRoute>
             }
           />
           <Route
             path="/categories"
             element={
-              <PrivateRoute>
+              <RoleBasedRoute allowedRoles={['admin']}>
                 <Categories />
-              </PrivateRoute>
+              </RoleBasedRoute>
             }
           />
           <Route
             path="/articles"
             element={
-              <PrivateRoute>
+              <RoleBasedRoute allowedRoles={['admin']}>
                 <Articles />
-              </PrivateRoute>
+              </RoleBasedRoute>
             }
           />
           <Route
             path="/units"
             element={
-              <AdminRoute>
+              <RoleBasedRoute allowedRoles={['admin']}>
                 <Units />
-              </AdminRoute>
+              </RoleBasedRoute>
             }
           />
           <Route
             path="/suppliers"
             element={
-              <PrivateRoute>
+              <RoleBasedRoute allowedRoles={['admin']}>
                 <Suppliers />
-              </PrivateRoute>
+              </RoleBasedRoute>
             }
           />
           <Route
             path="/inflow"
             element={
-              <PrivateRoute>
+              <RoleBasedRoute allowedRoles={['admin', 'cash_inflow']}>
                 <CashInflow />
-              </PrivateRoute>
+              </RoleBasedRoute>
             }
           />
           <Route
             path="/expenses"
             element={
-              <PrivateRoute>
+              <RoleBasedRoute allowedRoles={['admin', 'expenses']}>
                 <Expenses />
-              </PrivateRoute>
+              </RoleBasedRoute>
             }
           />
           <Route
             path="/expenses/history"
-            element={<Layout><ExpenseHistory /></Layout>}
+            element={
+              <RoleBasedRoute allowedRoles={['admin', 'expenses', 'pca']}>
+                <ExpenseHistory />
+              </RoleBasedRoute>
+            }
           />
           <Route
             path="/closing"
             element={
-              <AdminRoute>
+              <RoleBasedRoute allowedRoles={['admin', 'expenses']}>
                 <Closing />
-              </AdminRoute>
+              </RoleBasedRoute>
             }
           />
           <Route
             path="/users"
             element={
-              <AdminRoute>
+              <RoleBasedRoute allowedRoles={['admin']}>
                 <Users />
-              </AdminRoute>
+              </RoleBasedRoute>
             }
           />
           <Route path="/" element={<Navigate to="/login" />} />

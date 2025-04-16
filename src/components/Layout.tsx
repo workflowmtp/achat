@@ -56,9 +56,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { id: 'expense-history', label: 'Historique', icon: History, path: '/expenses/history' },
         { id: 'closing', label: 'Clôture', icon: PiggyBank, path: '/closing' },
       ];
+    } else if (userRole === 'pca') {
+      // pca1234 - accès uniquement à l'historique des dépenses
+      return [
+        { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3, path: '/dashboard' },
+        { id: 'expense-history', label: 'Historique des dépenses', icon: History, path: '/expenses/history' },
+      ];
     } else {
       // Utilisateur sans rôle spécifique - accès limité
       return [
+
         { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3, path: '/dashboard' },
       ];
     }
@@ -164,7 +171,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </div>
 
               <span className="text-gray-700">
-                {isAdmin ? '👑 Admin: ' : userRole === 'cash_inflow' ? '💰 Caissier: ' : userRole === 'expenses' ? '📊 Comptable: ' : 'Utilisateur: '}
+                {isAdmin ? '👑 Admin: ' : userRole === 'cash_inflow' ? '💰 Caissier: ' : userRole === 'expenses' ? '📊 Comptable: ' : userRole === 'pca' ? '📊 PCA: ' : 'Utilisateur: '}
                 {user?.displayName || 'Utilisateur'}
               </span>
               <button
