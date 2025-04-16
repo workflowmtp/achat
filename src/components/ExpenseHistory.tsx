@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { format, isValid, parseISO } from 'date-fns';
-import { Info, X, FileDown, Search, Save } from 'lucide-react';
+import { Info, X, FileDown, Search, Save, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { collection, getDocs, query, doc, updateDoc, getDoc } from 'firebase/firestore';
@@ -50,6 +50,68 @@ export default function ExpenseHistory() {
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
   const { user } = useAuth();
+
+  // Fonction pour exporter les dépenses en CSV
+  const exportToCSV = async () => {
+    try {
+      // Définir les en-têtes CSV
+      const headers = ['Date', 'Description', 'Projet', 'Utilisateur', 'Articles', 'Total'];
+      
+      // Transformer les données pour le CSV
+      const csvData = expenses.map(expense => {
+        const projectName = projects.find(p => p.id === expense.projectId)?.name || 'Non spécifié';
+        const userName = getUserName(expense.userId);
+        const itemsText = expense.items.map(item => 
+          `${item.designation} (${item.quantity} ${item.unit} à ${item.unitPrice}€)`
+        ).join('; ');
+        const total = expense.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0).toFixed(2);
+        
+        return [
+          expense.date,
+          expense.description,
+          projectName,
+          userName,
+          itemsText,
+          total
+        ];
+      });
+      
+      // Combiner les en-têtes et les données
+      const csvContent = [
+        headers.join(','),
+        ...csvData.map(row => 
+          row.map(cell => 
+            // Échapper les virgules et les guillemets dans les cellules
+            typeof cell === 'string' && (cell.includes(',') || cell.includes('"')) 
+              ? `"${cell.replace(/"/g, '""')}"` 
+              : cell
+          ).join(',')
+        )
+      ].join('\n');
+      
+      // Créer un objet Blob avec le contenu CSV
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      
+      // Créer un lien de téléchargement
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      
+      // Configurer le lien
+      link.setAttribute('href', url);
+      link.setAttribute('download', `depenses_${format(new Date(), 'yyyy-MM-dd_HH-mm-ss')}.csv`);
+      link.style.visibility = 'hidden';
+      
+      // Ajouter le lien au DOM, cliquer dessus, puis le supprimer
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      setSuccess('Exportation CSV réussie !');
+    } catch (error) {
+      console.error('Erreur lors de l\'exportation:', error);
+      setError('Erreur lors de l\'exportation des données');
+    }
+  };
 
   // Fonction pour récupérer le nom d'un utilisateur depuis Firebase
   const fetchUserName = useCallback(async (userId: string) => {
@@ -344,14 +406,14 @@ export default function ExpenseHistory() {
     filteredExpenses.forEach((expense, index) => {
       currentY += 10;
       doc.setFontSize(12);
-      doc.setFont(undefined, 'bold');
+      doc.setFont('helvetica', 'bold');
       // Utiliser une vérification explicite pour expense.date
       const expenseDate = expense.date || '';
       doc.text(`Dépense du ${formatDate(expenseDate)} - Réf: ${formatExpenseId(expense.id)}`, 14, currentY);
       
       currentY += 6;
       doc.setFontSize(10);
-      doc.setFont(undefined, 'normal');
+      doc.setFont('helvetica', 'normal');
       doc.text(`Description: ${expense.description}`, 14, currentY);
       currentY += 5;
       doc.text(`Projet: ${projects.find(p => p.id === expense.projectId)?.name || '-'}`, 14, currentY);
@@ -483,21 +545,16 @@ export default function ExpenseHistory() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-4">
         <h2 className="text-2xl font-bold">Historique des dépenses</h2>
-        <div className="space-x-4">
-          <select
-            value={selectedProject}
-            onChange={(e) => setSelectedProject(e.target.value)}
-            className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-4 py-3 bg-blue-50"
+        <div className="flex gap-2">
+          <button
+            onClick={exportToCSV}
+            className="flex items-center gap-1 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
           >
-            <option value="">Tous les projets</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {getProjectLabel(project)}
-              </option>
-            ))}
-          </select>
+            <Download className="w-4 h-4" />
+            Exporter en CSV
+          </button>
           <button
             onClick={handleExportPDF}
             className="inline-flex items-center px-4 py-3 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
