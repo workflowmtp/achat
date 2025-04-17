@@ -39,7 +39,7 @@ export default function Login() {
       const ADMIN_CODE = "ADMIN1234";
       const USER_CODE = "CAISSE_DEPENSE1";  // Accès aux dépenses, tableau de bord, historique, clôture
       const CASHFLOW_CODE = "CAISSE_ENTREE2"; // Accès uniquement aux entrées
-      const PCA_CODE = "pca1234"; // Accès uniquement à l'historique des dépenses
+      const PCA_CODE = "PCACODE"; // Accès uniquement à l'historique des dépenses
       
       let userRole = '';
       let isAdmin = false;
