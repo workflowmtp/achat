@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 import { Plus, Trash2, AlertCircle, Pencil, X, Save, Search } from 'lucide-react';
 import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -47,14 +47,24 @@ export default function Projects() {
       }
       
       const snapshot = await getDocs(projectQuery);
-      const projectsList = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
-      })) as Project[];
+      const projectsList = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: data.name || 'Sans nom',
+          description: data.description || '',
+          userId: data.userId || user?.uid || '',
+          startDate: data.startDate || '',
+          endDate: data.endDate || '',
+          status: data.status || 'active'
+        };
+      }) as Project[];
       setProjects(projectsList);
     } catch (err) {
       console.error("Erreur lors de la récupération des projets:", err);
       setError("Erreur lors de la récupération des projets");
+      // En cas d'erreur, définir une liste vide pour éviter les problèmes d'affichage
+      setProjects([]);
     }
   };
 
@@ -161,6 +171,8 @@ export default function Projects() {
   };
 
   const filteredProjects = projects.filter(project => {
+    if (!project || !project.name) return false;
+    
     const searchTermLower = searchTerm.toLowerCase();
     return (
       project.name.toLowerCase().includes(searchTermLower) ||
@@ -300,10 +312,14 @@ export default function Projects() {
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{project.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{project.description || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {format(new Date(project.startDate), 'dd/MM/yyyy')}
+                  {project.startDate && isValid(new Date(project.startDate)) 
+                    ? format(new Date(project.startDate), 'dd/MM/yyyy') 
+                    : '-'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {project.endDate ? format(new Date(project.endDate), 'dd/MM/yyyy') : '-'}
+                  {project.endDate && isValid(new Date(project.endDate)) 
+                    ? format(new Date(project.endDate), 'dd/MM/yyyy') 
+                    : '-'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-4">
                   <button

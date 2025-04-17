@@ -111,6 +111,8 @@ export default function CashInflow() {
       setProjects(projectsList);
     } catch (error) {
       console.error('Erreur lors de la récupération des projets:', error);
+      // En cas d'erreur, définir une liste vide pour éviter les problèmes d'affichage
+      setProjects([]);
     }
   };
 

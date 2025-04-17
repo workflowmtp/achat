@@ -248,7 +248,8 @@ export default function ExpenseHistory() {
       setProjects(projectsList);
     } catch (error) {
       console.error('Erreur lors de la récupération des projets:', error);
-      setError('Erreur lors de la récupération des projets');
+      // En cas d'erreur, définir une liste vide pour éviter les problèmes d'affichage
+      setProjects([]);
     }
   };
 

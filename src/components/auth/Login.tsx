@@ -3,9 +3,8 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../firebase';
 import { useNavigate, Link } from 'react-router-dom';
 import { KeyRound, Mail, LogIn, ShieldCheck } from 'lucide-react';
-import { doc } from 'firebase/firestore';
+import { doc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { updateDoc } from 'firebase/firestore/lite';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -38,8 +37,8 @@ export default function Login() {
       
       // Déterminer le rôle et les accès en fonction du code saisi
       const ADMIN_CODE = "ADMIN1234";
-      const USER_CODE = "User1234";  // Accès aux dépenses, tableau de bord, historique, clôture
-      const CASHFLOW_CODE = "User12345"; // Accès uniquement aux entrées
+      const USER_CODE = "CAISSE_DEPENSE1";  // Accès aux dépenses, tableau de bord, historique, clôture
+      const CASHFLOW_CODE = "CAISSE_ENTREE2"; // Accès uniquement aux entrées
       const PCA_CODE = "pca1234"; // Accès uniquement à l'historique des dépenses
       
       let userRole = '';
@@ -72,13 +71,35 @@ export default function Login() {
       // Ceci est facultatif si vous préférez déterminer les accès uniquement via le code
       try {
         const userRef = doc(db, 'users', userCredential.user.uid);
-        await updateDoc(userRef, {
+        
+        // Créer un objet avec les données utilisateur
+        const userData = {
           role: userRole,
           isAdmin: isAdmin,
-          lastLogin: new Date().toISOString()
-        });
-      } catch (updateErr) {
-        console.warn('Impossible de mettre à jour le profil utilisateur', updateErr);
+          lastLogin: new Date().toISOString(),
+          email: email,
+          displayName: email.split('@')[0], // Utiliser la partie avant @ comme nom d'affichage par défaut
+          createdAt: new Date().toISOString()
+        };
+        
+        try {
+          // Essayer de mettre à jour le document
+          await updateDoc(userRef, {
+            role: userRole,
+            isAdmin: isAdmin,
+            lastLogin: new Date().toISOString()
+          });
+        } catch (updateErr: any) {
+          // Si le document n'existe pas, le créer avec setDoc
+          if (updateErr.message && updateErr.message.includes('No document to update')) {
+            await setDoc(userRef, userData);
+            console.log('Profil utilisateur créé avec succès');
+          } else {
+            throw updateErr; // Relancer d'autres types d'erreurs
+          }
+        }
+      } catch (err) {
+        console.warn('Impossible de mettre à jour ou créer le profil utilisateur', err);
         // Continuer même si la mise à jour échoue
       }
       
@@ -86,6 +107,9 @@ export default function Login() {
       if (userRole === 'pca') {
         // Rediriger les utilisateurs PCA directement vers l'historique des dépenses
         navigate('/expenses/history');
+      } else if (userRole === 'cash_inflow') {
+        // Rediriger les utilisateurs cash_inflow directement vers la page des entrées
+        navigate('/inflow');
       } else {
         // Redirection vers le tableau de bord pour les autres rôles
         navigate('/dashboard');

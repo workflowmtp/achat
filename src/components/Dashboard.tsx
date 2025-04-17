@@ -52,23 +52,24 @@ export default function Dashboard() {
         inflowQuery = query(inflowRef);
       } else {
         // Regular users only see their own inflow
-        inflowQuery = query(
-          inflowRef,
-          where('userId', '==', user.uid)
-        );
+        inflowQuery = query(inflowRef, where('userId', '==', user.uid));
       }
       
       const inflowSnapshot = await getDocs(inflowQuery);
-      const allInflow = inflowSnapshot.docs.map(doc => doc.data() as CashEntry);
-
-      // Calculate total inflow
-      const totalInflow = allInflow.reduce((sum, entry) => sum + entry.amount, 0);
-
+      const inflowEntries = inflowSnapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      })) as CashEntry[];
+      
+      // Calculate current balance (all time)
+      const totalInflow = inflowEntries.reduce((sum, entry) => sum + entry.amount, 0);
+      
       // Calculate daily inflow
-      const todayInflow = allInflow
-        .filter(entry => entry.date >= startOfToday && entry.date <= endOfToday)
-        .reduce((sum, entry) => sum + entry.amount, 0);
-
+      const todayInflow = inflowEntries.filter(entry => 
+        entry.date >= startOfToday && entry.date <= endOfToday
+      );
+      const todayInflowTotal = todayInflow.reduce((sum, entry) => sum + entry.amount, 0);
+      
       // Fetch all expenses
       const expensesRef = collection(db, 'expenses');
       let expensesQuery;
@@ -78,52 +79,64 @@ export default function Dashboard() {
         expensesQuery = query(expensesRef);
       } else {
         // Regular users only see their own expenses
-        expensesQuery = query(
-          expensesRef,
-          where('userId', '==', user.uid)
-        );
+        expensesQuery = query(expensesRef, where('userId', '==', user.uid));
       }
       
       const expensesSnapshot = await getDocs(expensesQuery);
       const expenses = expensesSnapshot.docs.map(doc => ({
         ...doc.data(),
-        id: doc.id
+        id: doc.id,
+        items: []
       })) as Expense[];
-
+      
+      // Fetch all expense items
+      const itemsRef = collection(db, 'expense_items');
+      const itemsSnapshot = await getDocs(itemsRef);
+      const allItems = itemsSnapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      })) as ExpenseItem[];
+      
+      // Associate items with their expenses
+      expenses.forEach(expense => {
+        expense.items = allItems.filter(item => item.expenseId === expense.id);
+      });
+      
+      // Calculate total expenses
       let totalExpenses = 0;
-      let todayExpenses = 0;
-      let todayTransactionsCount = 0;
-
-      // Calculate expenses and count transactions
       for (const expense of expenses) {
-        const itemsRef = collection(db, 'expense_items');
-        const itemsQuery = query(itemsRef, where('expenseId', '==', expense.id));
-        const itemsSnapshot = await getDocs(itemsQuery);
-        const items = itemsSnapshot.docs.map(doc => doc.data() as ExpenseItem);
-        
+        const items = expense.items || [];
         const expenseTotal = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-        
-        if (expense.date >= startOfToday && expense.date <= endOfToday) {
-          todayExpenses += expenseTotal;
-          todayTransactionsCount++;
-        }
-        
         totalExpenses += expenseTotal;
       }
-
-      // Count today's inflow transactions
-      const todayInflowTransactions = allInflow.filter(
-        entry => entry.date >= startOfToday && entry.date <= endOfToday
-      ).length;
-
-      // Update state
-      setCurrentBalance(totalInflow - totalExpenses);
-      setDailyInflow(todayInflow);
-      setDailyExpenses(todayExpenses);
-      setDailyTransactions(todayInflowTransactions + todayTransactionsCount);
-
+      
+      // Calculate daily expenses
+      const todayExpenses = expenses.filter(expense => 
+        expense.date >= startOfToday && expense.date <= endOfToday
+      );
+      let todayExpensesTotal = 0;
+      for (const expense of todayExpenses) {
+        const items = expense.items || [];
+        const expenseTotal = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+        todayExpensesTotal += expenseTotal;
+      }
+      
+      // Calculate current balance
+      const currentBalance = totalInflow - totalExpenses;
+      
+      // Set state
+      setCurrentBalance(currentBalance);
+      setDailyInflow(todayInflowTotal);
+      setDailyExpenses(todayExpensesTotal);
+      setDailyTransactions(todayInflow.length + todayExpenses.length);
+      
     } catch (error) {
       console.error('Erreur lors de la récupération des données du tableau de bord:', error);
+      // En cas d'erreur, définir des valeurs par défaut pour éviter les problèmes d'affichage
+      setCurrentBalance(0);
+      setDailyInflow(0);
+      setDailyExpenses(0);
+      setDailyTransactions(0);
     }
   };
 
