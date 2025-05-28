@@ -31,6 +31,7 @@ interface ExpenseItem {
 interface Expense {
   id: string;
   items: ExpenseItem[];
+  userId?: string; // Ajouter userId comme propriété optionnelle
 }
 
 export default function CashInflow() {
@@ -44,8 +45,15 @@ export default function CashInflow() {
   const [totalExpenses, setTotalExpenses] = useState<number>(0);
   const [error, setError] = useState<string>('');
   const { user } = useAuth();
-  const isAdmin = localStorage.getItem('isAdmin') === 'true';
+  const userRole = localStorage.getItem('userRole') || '';
+  const isAdmin = localStorage.getItem('isAdmin') === 'true' || userRole === 'admin';
   const { pcaDebt, loading, refreshPCADebt } = usePCADebt(); // Utiliser le hook pour la dette PCA
+  
+  // Afficher un message dans la console pour le débogage
+  useEffect(() => {
+    console.log('CashInflow - isAdmin:', isAdmin);
+    console.log('CashInflow - userRole:', userRole);
+  }, [isAdmin, userRole]);
 
   const sources = [
     { id: 'rebus', label: 'Compte des rebus' },
@@ -54,15 +62,8 @@ export default function CashInflow() {
     { id: 'granule', label: 'Vente Granule' }
   ];
 
-  useEffect(() => {
-    if (user) {
-      fetchEntries();
-      fetchProjects();
-      fetchTotalExpenses();
-    }
-  }, [user]);
-
-  const fetchTotalExpenses = async () => {
+  // Définir fetchTotalExpenses avec useCallback
+  const fetchTotalExpenses = React.useCallback(async () => {
     if (!user) return;
     
     try {
@@ -97,9 +98,10 @@ export default function CashInflow() {
     } catch (error) {
       console.error('Erreur lors du calcul des dépenses totales:', error);
     }
-  };
+  }, [user, isAdmin]);
 
-  const fetchProjects = async () => {
+  // Définir fetchProjects avec useCallback
+  const fetchProjects = React.useCallback(async () => {
     try {
       const projectsRef = collection(db, 'projects');
       const snapshot = await getDocs(projectsRef);
@@ -114,9 +116,10 @@ export default function CashInflow() {
       // En cas d'erreur, définir une liste vide pour éviter les problèmes d'affichage
       setProjects([]);
     }
-  };
+  }, []);
 
-  const fetchEntries = async () => {
+  // Définir fetchEntries avec useCallback
+  const fetchEntries = React.useCallback(async () => {
     if (!user) return;
     
     try {
@@ -136,9 +139,29 @@ export default function CashInflow() {
     } catch (error) {
       console.error('Erreur lors de la récupération des entrées:', error);
     }
-  };
+  }, [user, isAdmin]);
 
-  const createCashInflow = async (entry: any, userId: string) => {
+  useEffect(() => {
+    if (user) {
+      fetchEntries();
+      fetchProjects();
+      fetchTotalExpenses();
+    }
+  }, [user, fetchEntries, fetchProjects, fetchTotalExpenses]);
+
+  // La fonction fetchTotalExpenses a été déplacée avant le useEffect
+
+  // La fonction fetchProjects a été déplacée avant le useEffect
+
+  // La fonction fetchEntries a été déplacée avant le useEffect
+
+  const createCashInflow = async (entry: {
+    date: string;
+    amount: number;
+    source: string;
+    description: string;
+    projectId: string;
+  }, userId: string) => {
     try {
       const cashInflowRef = collection(db, 'cash_inflow');
       const docRef = await addDoc(cashInflowRef, {
@@ -176,7 +199,9 @@ export default function CashInflow() {
       const result = await createCashInflow(newEntry, user.uid);
       
       if (result.success) {
-        setEntries([...entries, { ...newEntry, id: result.id, userId: user.uid }]);
+        if (result.id) {
+          setEntries([...entries, { ...newEntry, id: result.id, userId: user.uid }]);
+        }
         setAmount('');
         setSource('');
         setDescription('');
@@ -341,7 +366,9 @@ export default function CashInflow() {
               return (
                 <tr key={entry.id}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {format(new Date(entry.date), 'dd/MM/yyyy')}
+                    {entry.date && !isNaN(new Date(entry.date).getTime()) 
+                      ? format(new Date(entry.date), 'dd/MM/yyyy')
+                      : 'Date invalide'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {sources.find(s => s.id === entry.source)?.label}

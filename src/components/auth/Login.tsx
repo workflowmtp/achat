@@ -36,30 +36,26 @@ export default function Login() {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       
       // Déterminer le rôle et les accès en fonction du code saisi
-      const ADMIN_CODE = "ADMIN1234";
-      const USER_CODE = "CAISSE_DEPENSE1";  // Accès aux dépenses, tableau de bord, historique, clôture
-      const CASHFLOW_CODE = "CAISSE_ENTREE2"; // Accès uniquement aux entrées
-      const PCA_CODE = "PCACODE"; // Accès uniquement à l'historique des dépenses
+      const ADMIN_CODE = "Admin12345"; // Code administrateur unique
+      const USER_CODE = "User1234";    // Code utilisateur unique
       
       let userRole = '';
       let isAdmin = false;
 
       // Attribution des rôles basée uniquement sur le code d'accès
       if (accessCode === ADMIN_CODE) {
+        // Administrateur unique avec accès complet
         isAdmin = true;
         userRole = 'admin';
         localStorage.setItem('isAdmin', 'true');
+        console.log('Connexion administrateur réussie');
       } else if (accessCode === USER_CODE) {
-        userRole = 'expenses';
+        // Utilisateur standard avec accès limité
+        userRole = 'user';
         localStorage.removeItem('isAdmin');
-      } else if (accessCode === CASHFLOW_CODE) {
-        userRole = 'cash_inflow';
-        localStorage.removeItem('isAdmin');
-      } else if (accessCode === PCA_CODE) {
-        userRole = 'pca';
-        localStorage.removeItem('isAdmin');
+        console.log('Connexion utilisateur réussie');
       } else {
-        setError('Code d\'accès invalide');
+        setError('Code d\'accès invalide. Utilisez Admin12345 pour l\'administrateur ou User1234 pour l\'utilisateur.');
         setLoading(false);
         return;
       }
@@ -89,7 +85,7 @@ export default function Login() {
             isAdmin: isAdmin,
             lastLogin: new Date().toISOString()
           });
-        } catch (updateErr: any) {
+        } catch (updateErr: Error) {
           // Si le document n'existe pas, le créer avec setDoc
           if (updateErr.message && updateErr.message.includes('No document to update')) {
             await setDoc(userRef, userData);

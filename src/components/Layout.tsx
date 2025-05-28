@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Wallet, Receipt, PiggyBank, BarChart3, FolderKanban, LogOut, Package, Bell, History, Ruler, Users, UserCog } from 'lucide-react';
 import { useAuth } from './auth/AuthContext';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 
 interface Notification {
@@ -21,59 +21,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const isAdmin = localStorage.getItem('isAdmin') === 'true';
   const userRole = localStorage.getItem('userRole') || '';
 
-  useEffect(() => {
-    if (user) {
-      fetchNotifications();
-    }
-  }, [user]);
-
-  // Only show relevant tabs based on user role and access code
-  const getTabs = () => {
-    if (isAdmin) {
-      // Administrateurs (code ADMIN1234) - accès à tout
-      return [
-        { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3, path: '/dashboard' },
-        { id: 'projects', label: 'Projets', icon: FolderKanban, path: '/projects' },
-        { id: 'articles', label: 'Articles', icon: Package, path: '/articles' },
-        { id: 'units', label: 'Unités', icon: Ruler, path: '/units' },
-        { id: 'users', label: 'Utilisateurs', icon: UserCog, path: '/users' },
-        { id: 'suppliers', label: 'Fournisseurs', icon: Users, path: '/suppliers' },
-        { id: 'inflow', label: 'Entrées', icon: Wallet, path: '/inflow' },
-        { id: 'expenses', label: 'Dépenses', icon: Receipt, path: '/expenses' },
-        { id: 'expense-history', label: 'Historique', icon: History, path: '/expenses/history' },
-        { id: 'closing', label: 'Clôture', icon: PiggyBank, path: '/closing' },
-      ];
-    } else if (userRole === 'cash_inflow') {
-      // User12345 - accès uniquement aux entrées
-      return [
-        { id: 'inflow', label: 'Entrées', icon: Wallet, path: '/inflow' },
-      ];
-    } else if (userRole === 'expenses') {
-      // User1234 - accès aux dépenses, tableau de bord, historique, clôture
-      return [
-        { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3, path: '/dashboard' },
-        { id: 'expenses', label: 'Dépenses', icon: Receipt, path: '/expenses' },
-        { id: 'expense-history', label: 'Historique', icon: History, path: '/expenses/history' },
-        { id: 'closing', label: 'Clôture', icon: PiggyBank, path: '/closing' },
-      ];
-    } else if (userRole === 'pca') {
-      // pca1234 - accès uniquement à l'historique des dépenses
-      return [
-        { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3, path: '/dashboard' },
-        { id: 'expense-history', label: 'Historique des dépenses', icon: History, path: '/expenses/history' },
-      ];
-    } else {
-      // Utilisateur sans rôle spécifique - accès limité
-      return [
-
-        { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3, path: '/dashboard' },
-      ];
-    }
-  };
-
-  const tabs = getTabs();
-
-  const fetchNotifications = async () => {
+  // Définir fetchNotifications avec useCallback pour éviter les re-rendus inutiles
+  const fetchNotifications = React.useCallback(async () => {
     if (!user) return;
 
     try {
@@ -96,7 +45,54 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Erreur lors de la récupération des notifications:', error);
     }
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      fetchNotifications();
+    }
+  }, [user, fetchNotifications]);
+
+  // Only show relevant tabs based on user role and access code
+  const getTabs = () => {
+    // Vérifier si l'utilisateur est administrateur (Admin12345)
+    if (isAdmin || userRole === 'admin') {
+      console.log('Chargement des onglets administrateur');
+      // Administrateur - accès complet
+      return [
+        { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3, path: '/dashboard' },
+        { id: 'projects', label: 'Projets', icon: FolderKanban, path: '/projects' },
+        { id: 'articles', label: 'Articles', icon: Package, path: '/articles' },
+        { id: 'units', label: 'Unités', icon: Ruler, path: '/units' },
+        { id: 'users', label: 'Utilisateurs', icon: UserCog, path: '/users' },
+        { id: 'suppliers', label: 'Fournisseurs', icon: Users, path: '/suppliers' },
+        { id: 'inflow', label: 'Entrées', icon: Wallet, path: '/inflow' },
+        { id: 'expenses', label: 'Dépenses', icon: Receipt, path: '/expenses' },
+        { id: 'expense-history', label: 'Historique', icon: History, path: '/expenses/history' },
+        { id: 'closing', label: 'Clôture', icon: PiggyBank, path: '/closing' },
+      ];
+    } else if (userRole === 'user') {
+      // Utilisateur standard (User1234) - accès limité
+      console.log('Chargement des onglets utilisateur standard');
+      return [
+        { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3, path: '/dashboard' },
+        { id: 'inflow', label: 'Entrées', icon: Wallet, path: '/inflow' },
+        { id: 'expenses', label: 'Dépenses', icon: Receipt, path: '/expenses' },
+        { id: 'expense-history', label: 'Historique', icon: History, path: '/expenses/history' },
+        { id: 'closing', label: 'Clôture', icon: PiggyBank, path: '/closing' },
+      ];
+    } else {
+      // Utilisateur sans rôle spécifique - accès minimal
+      console.log('Utilisateur sans rôle spécifique');
+      return [
+        { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3, path: '/dashboard' },
+      ];
+    }
   };
+
+  const tabs = getTabs();
+
+  // La fonction fetchNotifications a été déplacée avant le useEffect
 
   const handleLogout = () => {
     localStorage.removeItem('isAdmin');

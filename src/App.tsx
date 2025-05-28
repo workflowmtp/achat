@@ -19,7 +19,7 @@ import ExpenseHistory from './components/ExpenseHistory';
 import Closing from './components/Closing';
 import Users from './components/Users';
 
-// Route pour les utilisateurs avec des rôles spécifiques (admin, expenses, cash_inflow, pca)
+// Route pour les utilisateurs avec des rôles spécifiques (admin, user)
 function RoleBasedRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles: string[] }) {
   const { user, loading } = useAuth();
   const userRole = localStorage.getItem('userRole') || '';
@@ -33,18 +33,17 @@ function RoleBasedRoute({ children, allowedRoles }: { children: React.ReactNode,
     return <Navigate to="/login" />;
   }
   
+  // Vérifier si l'utilisateur est administrateur
   // Les administrateurs ont accès à tout
-  if (isAdmin) {
+  if (isAdmin || userRole === 'admin') {
+    console.log('Accès administrateur accordé');
     return <Layout>{children}</Layout>;
   }
   
   // Vérifier si le rôle de l'utilisateur est dans la liste des rôles autorisés
   if (!allowedRoles.includes(userRole)) {
-    // Rediriger les utilisateurs PCA vers l'historique des dépenses s'ils tentent d'accéder à une autre page
-    if (userRole === 'pca') {
-      return <Navigate to="/expenses/history" />;
-    }
-    // Rediriger les autres utilisateurs vers le tableau de bord
+    console.log('Accès refusé pour le rôle:', userRole);
+    // Rediriger l'utilisateur standard vers le tableau de bord
     return <Navigate to="/dashboard" />;
   }
   
@@ -64,7 +63,7 @@ function App() {
           <Route
             path="/dashboard"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'expenses', 'pca']}>
+              <RoleBasedRoute allowedRoles={['admin', 'user']}>
                 <Dashboard />
               </RoleBasedRoute>
             }
@@ -112,7 +111,7 @@ function App() {
           <Route
             path="/inflow"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'cash_inflow']}>
+              <RoleBasedRoute allowedRoles={['admin', 'user']}>
                 <CashInflow />
               </RoleBasedRoute>
             }
@@ -120,7 +119,7 @@ function App() {
           <Route
             path="/expenses"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'expenses']}>
+              <RoleBasedRoute allowedRoles={['admin', 'user']}>
                 <Expenses />
               </RoleBasedRoute>
             }
@@ -128,7 +127,7 @@ function App() {
           <Route
             path="/expenses/history"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'expenses', 'pca']}>
+              <RoleBasedRoute allowedRoles={['admin', 'user']}>
                 <ExpenseHistory />
               </RoleBasedRoute>
             }
@@ -136,7 +135,7 @@ function App() {
           <Route
             path="/closing"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'expenses']}>
+              <RoleBasedRoute allowedRoles={['admin', 'user']}>
                 <Closing />
               </RoleBasedRoute>
             }
