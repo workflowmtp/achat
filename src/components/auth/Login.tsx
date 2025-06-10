@@ -37,31 +37,53 @@ export default function Login() {
       
       // Déterminer le rôle et les accès en fonction du code saisi
       const ADMIN_CODE = "Admin12345"; // Code administrateur unique
-      const USER_CODE = "User1234";    // Code utilisateur unique
+      const ENTRIES_CODE = "User1234";  // Code pour accès aux entrées
+      const EXPENSES_CODE = "User12345"; // Code pour accès aux dépenses
+      const DASHBOARD_ONLY_CODE = "PCAA"; // Code pour accès uniquement au tableau de bord
       
       let userRole = '';
       let isAdmin = false;
+      let accessEntries = false;
+      let accessExpenses = false;
 
       // Attribution des rôles basée uniquement sur le code d'accès
       if (accessCode === ADMIN_CODE) {
         // Administrateur unique avec accès complet
         isAdmin = true;
         userRole = 'admin';
+        accessEntries = true;
+        accessExpenses = true;
         localStorage.setItem('isAdmin', 'true');
         console.log('Connexion administrateur réussie');
-      } else if (accessCode === USER_CODE) {
-        // Utilisateur standard avec accès limité
+      } else if (accessCode === ENTRIES_CODE) {
+        // Utilisateur standard avec accès aux entrées uniquement
         userRole = 'user';
+        accessEntries = true;
         localStorage.removeItem('isAdmin');
-        console.log('Connexion utilisateur réussie');
+        console.log('Connexion utilisateur (accès entrées) réussie');
+      } else if (accessCode === EXPENSES_CODE) {
+        // Utilisateur standard avec accès aux dépenses uniquement
+        userRole = 'user';
+        accessExpenses = true;
+        localStorage.removeItem('isAdmin');
+        console.log('Connexion utilisateur (accès dépenses) réussie');
+      } else if (accessCode === DASHBOARD_ONLY_CODE) {
+        // Utilisateur avec accès uniquement au tableau de bord
+        userRole = 'dashboard_only';
+        accessEntries = false;
+        accessExpenses = false;
+        localStorage.removeItem('isAdmin');
+        console.log('Connexion utilisateur (accès tableau de bord uniquement) réussie');
       } else {
-        setError('Code d\'accès invalide. Utilisez Admin12345 pour l\'administrateur ou User1234 pour l\'utilisateur.');
+        setError('Code d\'accès invalide. Veuillez contacter votre administrateur.');
         setLoading(false);
         return;
       }
       
-      // Stocker le rôle dans le stockage local pour contrôler l'accès aux menus
+      // Stocker le rôle et les accès dans le stockage local pour contrôler l'accès aux menus
       localStorage.setItem('userRole', userRole);
+      localStorage.setItem('accessEntries', accessEntries.toString());
+      localStorage.setItem('accessExpenses', accessExpenses.toString());
       
       // Mise à jour optionnelle du rôle dans Firestore
       // Ceci est facultatif si vous préférez déterminer les accès uniquement via le code
@@ -72,6 +94,8 @@ export default function Login() {
         const userData = {
           role: userRole,
           isAdmin: isAdmin,
+          accessEntries: accessEntries,
+          accessExpenses: accessExpenses,
           lastLogin: new Date().toISOString(),
           email: email,
           displayName: email.split('@')[0], // Utiliser la partie avant @ comme nom d'affichage par défaut
@@ -83,15 +107,17 @@ export default function Login() {
           await updateDoc(userRef, {
             role: userRole,
             isAdmin: isAdmin,
+            accessEntries: accessEntries,
+            accessExpenses: accessExpenses,
             lastLogin: new Date().toISOString()
           });
-        } catch (updateErr: Error) {
+        } catch (updateErr: unknown) {
           // Si le document n'existe pas, le créer avec setDoc
-          if (updateErr.message && updateErr.message.includes('No document to update')) {
+          if (updateErr && typeof updateErr === 'object' && 'message' in updateErr && 
+              typeof updateErr.message === 'string' && updateErr.message.includes('No document to update')) {
             await setDoc(userRef, userData);
-            console.log('Profil utilisateur créé avec succès');
           } else {
-            throw updateErr; // Relancer d'autres types d'erreurs
+            console.error('Erreur lors de la mise à jour du document utilisateur:', updateErr);
           }
         }
       } catch (err) {
@@ -106,6 +132,9 @@ export default function Login() {
       } else if (userRole === 'cash_inflow') {
         // Rediriger les utilisateurs cash_inflow directement vers la page des entrées
         navigate('/inflow');
+      } else if (userRole === 'dashboard_only') {
+        // Rediriger les utilisateurs dashboard_only directement vers le tableau de bord
+        navigate('/dashboard');
       } else {
         // Redirection vers le tableau de bord pour les autres rôles
         navigate('/dashboard');
@@ -199,7 +228,7 @@ export default function Login() {
                 <input
                   id="accessCode"
                   name="accessCode"
-                  type="text"
+                  type="password"
                   value={accessCode}
                   onChange={(e) => setAccessCode(e.target.value)}
                   className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md bg-blue-50"

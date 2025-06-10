@@ -1,4 +1,4 @@
-import  { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './auth/AuthContext';
@@ -7,55 +7,29 @@ export function usePCADebt() {
   const [pcaDebt, setPcaDebt] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const { user } = useAuth();
-  const isAdmin = localStorage.getItem('isAdmin') === 'true';
 
-  useEffect(() => {
-    if (user) {
-      calculatePCADebt();
-    }
-  }, [user]);
-
-  const calculatePCADebt = async () => {
+  const calculatePCADebt = useCallback(async () => {
     if (!user) return;
     
     try {
       setLoading(true);
       
-      // 1. Récupérer toutes les entrées au compte PCA
+      // 1. Récupérer TOUTES les entrées au compte PCA (calcul global)
       const cashInflowRef = collection(db, 'cash_inflow');
-      let inflowQuery;
-      
-      if (isAdmin) {
-        inflowQuery = query(
-          cashInflowRef,
-          where('source', '==', 'pca')
-        );
-      } else {
-        inflowQuery = query(
-          cashInflowRef,
-          where('userId', '==', user.uid),
-          where('source', '==', 'pca')
-        );
-      }
+      const inflowQuery = query(
+        cashInflowRef,
+        where('source', '==', 'pca')
+      );
       
       const inflowSnapshot = await getDocs(inflowQuery);
       const pcaEntries = inflowSnapshot.docs.map(doc => doc.data());
       
-      // Calculer le total des entrées PCA
+      // Calculer le total des entrées PCA (global pour tous les utilisateurs)
       const totalPCAEntries = pcaEntries.reduce((sum, entry) => sum + entry.amount, 0);
       
-      // 2. Récupérer tous les remboursements PCA
+      // 2. Récupérer TOUS les remboursements PCA (calcul global)
       const reimburseRef = collection(db, 'pca_reimbursements');
-      let reimburseQuery;
-      
-      if (isAdmin) {
-        reimburseQuery = query(reimburseRef);
-      } else {
-        reimburseQuery = query(
-          reimburseRef,
-          where('userId', '==', user.uid)
-        );
-      }
+      const reimburseQuery = query(reimburseRef);
       
       const reimburseSnapshot = await getDocs(reimburseQuery);
       const reimbursements = reimburseSnapshot.docs.map(doc => doc.data());
@@ -72,7 +46,13 @@ export function usePCADebt() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      calculatePCADebt();
+    }
+  }, [user, calculatePCADebt]);
 
   return { pcaDebt, loading, refreshPCADebt: calculatePCADebt };
 }

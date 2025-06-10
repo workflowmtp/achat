@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { format, isValid } from 'date-fns';
-import { Plus, Trash2, AlertCircle, Pencil, X, Save, Search } from 'lucide-react';
+import { Plus, Trash2, AlertCircle, Pencil, X, Save, Search, Info } from 'lucide-react';
 import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './auth/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 interface Project {
   id: string;
@@ -25,6 +26,7 @@ export default function Projects() {
   const [searchTerm, setSearchTerm] = useState('');
   const { user } = useAuth();
   const isAdmin = localStorage.getItem('isAdmin') === 'true';
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchProjects();
@@ -323,13 +325,22 @@ export default function Projects() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-4">
                   <button
+                    onClick={() => navigate(`/projects/${project.id}`)}
+                    title="Voir les détails"
+                    className="text-green-600 hover:text-green-900 transition duration-150 ease-in-out inline-flex items-center"
+                  >
+                    <Info className="w-4 h-4" />
+                  </button>
+                  <button
                     onClick={() => handleEdit(project)}
+                    title="Modifier"
                     className="text-blue-600 hover:text-blue-900 transition duration-150 ease-in-out inline-flex items-center"
                   >
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => handleDelete(project.id)}
+                    title="Supprimer"
                     className="text-red-600 hover:text-red-900 transition duration-150 ease-in-out inline-flex items-center"
                   >
                     <Trash2 className="w-4 h-4" />

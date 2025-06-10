@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { format } from 'date-fns';
 import { CheckCircle } from 'lucide-react';
-import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './auth/AuthContext';
 
@@ -33,18 +33,12 @@ export default function Closing() {
   const [notes, setNotes] = useState('');
   const { user } = useAuth();
 
-  useEffect(() => {
-    if (user) {
-      fetchClosings();
-      fetchInitialBalance();
-    }
-  }, [user]);
-
-  const fetchInitialBalance = async () => {
+  // Utilisation de useCallback pour éviter les problèmes de dépendances dans useEffect
+  const fetchInitialBalance = useCallback(async () => {
     try {
-      // Fetch all cash inflow entries
+      // Fetch all cash inflow entries - GLOBAL pour tous les utilisateurs
       const inflowRef = collection(db, 'cash_inflow');
-      const q = query(inflowRef, where('userId', '==', user?.uid));
+      const q = query(inflowRef); // Récupérer toutes les entrées sans filtrer par utilisateur
       const snapshot = await getDocs(q);
       const entries = snapshot.docs.map(doc => doc.data() as CashEntry);
       
@@ -56,12 +50,12 @@ export default function Closing() {
     } catch (error) {
       console.error('Erreur lors de la récupération du solde initial:', error);
     }
-  };
+  }, []);
 
-  const fetchClosings = async () => {
+  const fetchClosings = useCallback(async () => {
     try {
       const closingsRef = collection(db, 'closings');
-      const q = query(closingsRef, where('userId', '==', user?.uid));
+      const q = query(closingsRef); // Récupérer toutes les clôtures sans filtrer par utilisateur
       const snapshot = await getDocs(q);
       const closingsList = snapshot.docs.map(doc => ({
         ...doc.data(),
@@ -71,7 +65,15 @@ export default function Closing() {
     } catch (error) {
       console.error('Erreur lors de la récupération des clôtures:', error);
     }
-  };
+  }, []);
+  
+  // Utilisation de useEffect avec les fonctions useCallback comme dépendances
+  useEffect(() => {
+    if (user) {
+      fetchClosings();
+      fetchInitialBalance();
+    }
+  }, [user, fetchClosings, fetchInitialBalance]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

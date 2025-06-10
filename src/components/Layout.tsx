@@ -20,6 +20,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const isAdmin = localStorage.getItem('isAdmin') === 'true';
   const userRole = localStorage.getItem('userRole') || '';
+  const hasEntriesAccess = localStorage.getItem('accessEntries') === 'true';
+  const hasExpensesAccess = localStorage.getItem('accessExpenses') === 'true';
 
   // Définir fetchNotifications avec useCallback pour éviter les re-rendus inutiles
   const fetchNotifications = React.useCallback(async () => {
@@ -53,7 +55,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     }
   }, [user, fetchNotifications]);
 
-  // Only show relevant tabs based on user role and access code
+  // Only show relevant tabs based on user role and access permissions
   const getTabs = () => {
     // Vérifier si l'utilisateur est administrateur (Admin12345)
     if (isAdmin || userRole === 'admin') {
@@ -72,14 +74,39 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { id: 'closing', label: 'Clôture', icon: PiggyBank, path: '/closing' },
       ];
     } else if (userRole === 'user') {
-      // Utilisateur standard (User1234) - accès limité
+      // Utilisateur standard - accès limité en fonction des permissions
       console.log('Chargement des onglets utilisateur standard');
+      console.log('hasEntriesAccess:', hasEntriesAccess);
+      console.log('hasExpensesAccess:', hasExpensesAccess);
+      
+      // Commencer par le tableau de bord qui est toujours accessible
+      const userTabs = [
+        { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3, path: '/dashboard' },
+      ];
+      
+      // Ajouter les onglets en fonction des permissions
+      if (hasEntriesAccess) {
+        userTabs.push({ id: 'inflow', label: 'Entrées', icon: Wallet, path: '/inflow' });
+        userTabs.push({ id: 'closing', label: 'Clôture', icon: PiggyBank, path: '/closing' });
+        userTabs.push({ id: 'projects', label: 'Projets', icon: FolderKanban, path: '/projects' });
+      }
+      
+      if (hasExpensesAccess) {
+        userTabs.push({ id: 'expenses', label: 'Dépenses', icon: Receipt, path: '/expenses' });
+        userTabs.push({ id: 'expense-history', label: 'Historique', icon: History, path: '/expenses/history' });
+        userTabs.push({ id: 'articles', label: 'Articles', icon: Package, path: '/articles' });
+        userTabs.push({ id: 'units', label: 'Unités', icon: Ruler, path: '/units' });
+        userTabs.push({ id: 'suppliers', label: 'Fournisseurs', icon: Users, path: '/suppliers' });
+      }
+      
+      return userTabs;
+    } else if (userRole === 'dashboard_only') {
+      // Utilisateur avec accès uniquement au tableau de bord (PCAA)
+      console.log('Chargement des onglets utilisateur tableau de bord uniquement');
+      
+      // Uniquement le tableau de bord est accessible
       return [
         { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3, path: '/dashboard' },
-        { id: 'inflow', label: 'Entrées', icon: Wallet, path: '/inflow' },
-        { id: 'expenses', label: 'Dépenses', icon: Receipt, path: '/expenses' },
-        { id: 'expense-history', label: 'Historique', icon: History, path: '/expenses/history' },
-        { id: 'closing', label: 'Clôture', icon: PiggyBank, path: '/closing' },
       ];
     } else {
       // Utilisateur sans rôle spécifique - accès minimal
@@ -97,6 +124,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const handleLogout = () => {
     localStorage.removeItem('isAdmin');
     localStorage.removeItem('userRole');
+    localStorage.removeItem('accessEntries');
+    localStorage.removeItem('accessExpenses');
     navigate('/login');
   };
 

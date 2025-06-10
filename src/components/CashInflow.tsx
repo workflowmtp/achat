@@ -43,6 +43,7 @@ export default function CashInflow() {
   const [description, setDescription] = useState('');
   const [projectId, setProjectId] = useState('');
   const [totalExpenses, setTotalExpenses] = useState<number>(0);
+  const [globalTotalInflow, setGlobalTotalInflow] = useState<number>(0);
   const [error, setError] = useState<string>('');
   const { user } = useAuth();
   const userRole = localStorage.getItem('userRole') || '';
@@ -59,10 +60,11 @@ export default function CashInflow() {
     { id: 'rebus', label: 'Compte des rebus' },
     { id: 'bank', label: 'Compte bancaire' },
     { id: 'pca', label: 'Compte PCA' },
-    { id: 'granule', label: 'Vente Granule' }
+    { id: 'granule', label: 'Vente Granule' },
+    { id: 'espece', label: 'Vente d\'espèce' }
   ];
 
-  // Définir fetchTotalExpenses avec useCallback
+  // Définir fetchTotalExpenses avec useCallback - calcul global pour tous les utilisateurs
   const fetchTotalExpenses = React.useCallback(async () => {
     if (!user) return;
     
@@ -75,14 +77,10 @@ export default function CashInflow() {
           id: doc.id
         })) as Expense[];
 
-      // Admin sees all expenses, regular users only see their own
-      const filteredExpenses = isAdmin 
-        ? expenses 
-        : expenses.filter(expense => expense.userId === user.uid);
-
+      // Calcul global pour tous les utilisateurs - pas de filtrage par utilisateur
       let total = 0;
 
-      for (const expense of filteredExpenses) {
+      for (const expense of expenses) {
         const itemsRef = collection(db, 'expense_items');
         const itemsQuery = query(itemsRef);
         const itemsSnapshot = await getDocs(itemsQuery);
@@ -98,7 +96,7 @@ export default function CashInflow() {
     } catch (error) {
       console.error('Erreur lors du calcul des dépenses totales:', error);
     }
-  }, [user, isAdmin]);
+  }, [user]);
 
   // Définir fetchProjects avec useCallback
   const fetchProjects = React.useCallback(async () => {
@@ -130,16 +128,17 @@ export default function CashInflow() {
         id: doc.id
       })) as CashEntry[];
 
-      // Admin sees all entries, regular users only see their own
-      const filteredEntries = isAdmin 
-        ? entriesList 
-        : entriesList.filter(entry => entry.userId === user.uid);
-
-      setEntries(filteredEntries);
+      // Tous les utilisateurs voient toutes les entrées - pas de filtrage par utilisateur
+      // Cela permet d'avoir une vue globale des entrées pour tous les utilisateurs
+      setEntries(entriesList);
+      
+      // Calculer le total global des entrées (pour tous les utilisateurs)
+      const globalTotal = entriesList.reduce((sum, entry) => sum + entry.amount, 0);
+      setGlobalTotalInflow(globalTotal);
     } catch (error) {
       console.error('Erreur lors de la récupération des entrées:', error);
     }
-  }, [user, isAdmin]);
+  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -214,9 +213,6 @@ export default function CashInflow() {
     }
   };
 
-  const totalInflow = entries.reduce((sum, entry) => sum + entry.amount, 0);
-  const balance = totalInflow - totalExpenses;
-
   const getProjectLabel = (project: Project) => {
     if (project.description) {
       return `${project.name} (${project.description})`;
@@ -237,28 +233,32 @@ export default function CashInflow() {
   return (
     <div>
       <h2 className="text-2xl font-bold mb-6">Entrées de fonds</h2>
-      
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <div className="bg-green-50 rounded-lg p-6">
-          <h3 className="text-sm font-medium text-green-800">Total des entrées</h3>
+          <h3 className="text-sm font-medium text-green-800">Total des entrées (global)</h3>
           <p className="mt-2 text-2xl font-semibold text-green-900">
-            {formatPrice(totalInflow)}
+            {formatPrice(globalTotalInflow)}
           </p>
+          {isAdmin ? null : (
+            <p className="mt-1 text-xs text-green-600">
+              Vos entrées: {formatPrice(entries.reduce((sum, entry) => sum + entry.amount, 0))}
+            </p>
+          )}
         </div>
         <div className="bg-red-50 rounded-lg p-6">
-          <h3 className="text-sm font-medium text-red-800">Total des dépenses</h3>
+          <h3 className="text-sm font-medium text-red-800">Total des dépenses (global)</h3>
           <p className="mt-2 text-2xl font-semibold text-red-900">
             {formatPrice(totalExpenses)}
           </p>
         </div>
         <div className="bg-blue-50 rounded-lg p-6">
-          <h3 className="text-sm font-medium text-blue-800">Solde en caisse</h3>
+          <h3 className="text-sm font-medium text-blue-800">Solde en caisse (global)</h3>
           <p className="mt-2 text-2xl font-semibold text-blue-900">
-            {formatPrice(balance)}
+            {formatPrice(globalTotalInflow - totalExpenses)}
           </p>
         </div>
         <div className="bg-yellow-50 rounded-lg p-6">
-          <h3 className="text-sm font-medium text-yellow-800">Dette PCA</h3>
+          <h3 className="text-sm font-medium text-yellow-800">Dette PCA (global)</h3>
           <p className="mt-2 text-2xl font-semibold text-yellow-900">
             {loading ? 'Calcul en cours...' : formatPrice(pcaDebt)}
           </p>
@@ -389,7 +389,7 @@ export default function CashInflow() {
                   Total
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
-                  {formatPrice(totalInflow)}
+                  {formatPrice(entries.reduce((sum, entry) => sum + entry.amount, 0))}
                 </td>
               </tr>
             )}

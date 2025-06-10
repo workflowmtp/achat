@@ -9,6 +9,7 @@ import Register from './components/auth/Register';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import Projects from './components/Projects';
+import ProjectDetails from './components/ProjectDetails';
 import Categories from './components/Categories';
 import Articles from './components/Articles';
 import Units from './components/Units';
@@ -19,35 +20,68 @@ import ExpenseHistory from './components/ExpenseHistory';
 import Closing from './components/Closing';
 import Users from './components/Users';
 
-// Route pour les utilisateurs avec des rôles spécifiques (admin, user)
+// Route pour les utilisateurs avec des accès spécifiques
 function RoleBasedRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles: string[] }) {
   const { user, loading } = useAuth();
   const userRole = localStorage.getItem('userRole') || '';
   const isAdmin = localStorage.getItem('isAdmin') === 'true';
+  const hasEntriesAccess = localStorage.getItem('accessEntries') === 'true';
+  const hasExpensesAccess = localStorage.getItem('accessExpenses') === 'true';
+  
+  // Ajouter des logs pour le débogage
+  console.log('RoleBasedRoute - userRole:', userRole);
+  console.log('RoleBasedRoute - isAdmin:', isAdmin);
+  console.log('RoleBasedRoute - hasEntriesAccess:', hasEntriesAccess);
+  console.log('RoleBasedRoute - hasExpensesAccess:', hasExpensesAccess);
+  console.log('RoleBasedRoute - allowedRoles:', allowedRoles);
+  console.log('RoleBasedRoute - path:', window.location.pathname);
   
   if (loading) {
+    console.log('RoleBasedRoute - Chargement...');
     return <div>Chargement...</div>;
   }
   
   if (!user) {
+    console.log('RoleBasedRoute - Utilisateur non authentifié, redirection vers /login');
     return <Navigate to="/login" />;
   }
   
-  // Vérifier si l'utilisateur est administrateur
+  // Vérifier les accès spécifiques
+  const path = window.location.pathname;
+  
   // Les administrateurs ont accès à tout
   if (isAdmin || userRole === 'admin') {
-    console.log('Accès administrateur accordé');
+    console.log('RoleBasedRoute - Accès administrateur accordé');
     return <Layout>{children}</Layout>;
   }
   
-  // Vérifier si le rôle de l'utilisateur est dans la liste des rôles autorisés
-  if (!allowedRoles.includes(userRole)) {
-    console.log('Accès refusé pour le rôle:', userRole);
-    // Rediriger l'utilisateur standard vers le tableau de bord
-    return <Navigate to="/dashboard" />;
+  // Vérifier les accès spécifiques en fonction du chemin
+  if (path.includes('/dashboard')) {
+    // Tout utilisateur authentifié a accès au tableau de bord
+    console.log('RoleBasedRoute - Accès au tableau de bord accordé');
+    return <Layout>{children}</Layout>;
   }
   
-  return <Layout>{children}</Layout>;
+  if (path.includes('/inflow')) {
+    // Vérifier si l'utilisateur a accès aux entrées
+    if (hasEntriesAccess) {
+      console.log('RoleBasedRoute - Accès aux entrées accordé');
+      return <Layout>{children}</Layout>;
+    }
+  }
+  
+  if (path.includes('/expenses') || path.includes('/closing')) {
+    // Vérifier si l'utilisateur a accès aux dépenses
+    if (hasExpensesAccess) {
+      console.log('RoleBasedRoute - Accès aux dépenses accordé');
+      return <Layout>{children}</Layout>;
+    }
+  }
+  
+  // Si on arrive ici, c'est que l'utilisateur n'a pas les droits nécessaires
+  console.log('RoleBasedRoute - Accès refusé');
+  // Rediriger l'utilisateur standard vers le tableau de bord
+  return <Navigate to="/dashboard" />;
 }
 
 function App() {
@@ -63,7 +97,7 @@ function App() {
           <Route
             path="/dashboard"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'user']}>
+              <RoleBasedRoute allowedRoles={['admin', 'entries', 'expenses']}>
                 <Dashboard />
               </RoleBasedRoute>
             }
@@ -73,6 +107,14 @@ function App() {
             element={
               <RoleBasedRoute allowedRoles={['admin']}>
                 <Projects />
+              </RoleBasedRoute>
+            }
+          />
+          <Route
+            path="/projects/:projectId"
+            element={
+              <RoleBasedRoute allowedRoles={['admin']}>
+                <ProjectDetails />
               </RoleBasedRoute>
             }
           />
