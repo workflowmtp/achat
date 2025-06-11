@@ -43,10 +43,15 @@ export default function Suppliers() {
       const suppliersList = snapshot.docs
         .map(doc => ({ ...doc.data(), id: doc.id } as Supplier));
       
-      // Filtrer les fournisseurs si non admin
-      const filteredSuppliers = isAdmin 
+      // Vérifier si l'utilisateur a accès aux dépenses
+      const hasExpensesAccess = localStorage.getItem('accessExpenses') === 'true';
+      
+      // Si admin ou utilisateur avec accès aux dépenses, afficher tous les fournisseurs, sinon filtrer par userId
+      const filteredSuppliers = (isAdmin || hasExpensesAccess)
         ? suppliersList 
         : suppliersList.filter(supplier => supplier.userId === user.uid);
+        
+      console.log('Affichage des fournisseurs pour utilisateur avec accès aux dépenses:', hasExpensesAccess);
         
       setSuppliers(filteredSuppliers);
     } catch (err) {

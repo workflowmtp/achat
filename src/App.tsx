@@ -126,7 +126,7 @@ function App() {
           <Route
             path="/articles"
             element={
-              <RoleBasedRoute allowedRoles={['admin']}>
+              <RoleBasedRoute allowedRoles={['admin', 'user']}>
                 <Articles />
               </RoleBasedRoute>
             }
@@ -134,7 +134,7 @@ function App() {
           <Route
             path="/units"
             element={
-              <RoleBasedRoute allowedRoles={['admin']}>
+              <RoleBasedRoute allowedRoles={['admin', 'user']}>
                 <Units />
               </RoleBasedRoute>
             }
@@ -142,7 +142,7 @@ function App() {
           <Route
             path="/suppliers"
             element={
-              <RoleBasedRoute allowedRoles={['admin']}>
+              <RoleBasedRoute allowedRoles={['admin', 'user']}>
                 <Suppliers />
               </RoleBasedRoute>
             }

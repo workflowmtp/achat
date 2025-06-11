@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { format, isValid } from 'date-fns';
 import { Plus, Trash2, AlertCircle, Pencil, X, Save, Search, Info } from 'lucide-react';
 import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, where } from 'firebase/firestore';
@@ -28,24 +28,25 @@ export default function Projects() {
   const isAdmin = localStorage.getItem('isAdmin') === 'true';
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchProjects();
-  }, [user]);
-
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     try {
       const projectsRef = collection(db, 'projects');
       let projectQuery;
       
-      if (isAdmin) {
-        // Admin sees all projects
+      // Vérifier si l'utilisateur a accès aux entrées (Dep-1234)
+      const hasEntriesAccess = localStorage.getItem('accessEntries') === 'true';
+      
+      if (isAdmin || hasEntriesAccess) {
+        // Admin et utilisateurs avec accès aux entrées voient tous les projets
         projectQuery = query(projectsRef);
+        console.log('Affichage de tous les projets pour admin ou utilisateur avec accès aux entrées');
       } else {
-        // Regular users only see their own projects
+        // Les autres utilisateurs ne voient que leurs propres projets
         projectQuery = query(
           projectsRef,
           where('userId', '==', user?.uid)
         );
+        console.log('Affichage uniquement des projets de l\'utilisateur:', user?.uid);
       }
       
       const snapshot = await getDocs(projectQuery);
@@ -68,7 +69,12 @@ export default function Projects() {
       // En cas d'erreur, définir une liste vide pour éviter les problèmes d'affichage
       setProjects([]);
     }
-  };
+  }, [isAdmin, user]);
+
+  // Appeler fetchProjects au chargement du composant
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
 
   const validateDates = () => {
     if (!startDate) {

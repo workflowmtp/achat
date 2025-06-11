@@ -60,10 +60,15 @@ export default function Articles() {
         id: doc.id
       })) as Article[];
       
-      // Si admin, afficher tous les articles, sinon filtrer par userId
-      const filteredArticles = isAdmin 
+      // Vérifier si l'utilisateur a accès aux dépenses
+      const hasExpensesAccess = localStorage.getItem('accessExpenses') === 'true';
+      
+      // Si admin ou utilisateur avec accès aux dépenses, afficher tous les articles, sinon filtrer par userId
+      const filteredArticles = (isAdmin || hasExpensesAccess)
         ? articlesList 
         : articlesList.filter(article => article.userId === user?.uid);
+      
+      console.log('Affichage des articles pour utilisateur avec accès aux dépenses:', hasExpensesAccess);
         
       setArticles(filteredArticles.sort((a, b) => b.reference.localeCompare(a.reference)));
     } catch (err) {
