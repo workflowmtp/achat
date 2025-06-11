@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { format } from 'date-fns';
-import { Plus, Trash2, Save, Search } from 'lucide-react';
-import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
+import { Plus, Trash2, Save, Search, Edit, X, Check } from 'lucide-react';
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './auth/AuthContext';
 import PCAReimbursement from './PCAReimbursement';
@@ -43,6 +43,7 @@ interface ExpenseItem {
   expenseId: string;
 }
 
+// Cette interface est utilisée lors de la création d'une dépense complète
 interface Expense {
   id: string;
   date: string;
@@ -53,7 +54,7 @@ interface Expense {
   userId: string;
 }
 
-function Expenses() {
+const Expenses: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -71,14 +72,116 @@ function Expenses() {
   const [amountGiven, setAmountGiven] = useState('');
   const [beneficiary, setBeneficiary] = useState('');
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  
+  // États pour la gestion de la modification et suppression
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [reference, setReference] = useState('');
+  const [expenseItems, setExpenseItems] = useState<{[key: string]: ExpenseItem[]}>({});
+  
+  // Vérification des droits d'administration
+  const userRole = localStorage.getItem('userRole') || '';
+  const isAdmin = localStorage.getItem('isAdmin') === 'true' || userRole === 'admin';
+
+  // Fonction pour récupérer les dépenses et leurs items
+  const fetchExpenses = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      // Récupérer toutes les dépenses
+      const expensesRef = collection(db, 'expenses');
+      const expensesSnapshot = await getDocs(expensesRef);
+      const expensesList = expensesSnapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      })) as Expense[];
+      
+      setExpenses(expensesList);
+      
+      // Pour chaque dépense, récupérer ses items
+      const itemsMap: {[key: string]: ExpenseItem[]} = {};
+      
+      for (const expense of expensesList) {
+        const expenseItemsRef = query(
+          collection(db, 'expense_items'),
+          where('expenseId', '==', expense.id)
+        );
+        
+        const itemsSnapshot = await getDocs(expenseItemsRef);
+        const itemsList = itemsSnapshot.docs.map(doc => ({
+          ...doc.data(),
+          id: doc.id
+        })) as ExpenseItem[];
+        
+        itemsMap[expense.id] = itemsList;
+      }
+      
+      setExpenseItems(itemsMap);
+    } catch (error) {
+      console.error('Erreur lors de la récupération des dépenses:', error);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (user) {
+      // Fonction pour récupérer les projets
+      const fetchProjects = async () => {
+        try {
+          const projectsRef = collection(db, 'projects');
+          const snapshot = await getDocs(projectsRef);
+          const projectsList = snapshot.docs.map(doc => ({
+            id: doc.id,
+            name: doc.data().name,
+            description: doc.data().description || ''
+          }));
+          setProjects(projectsList);
+        } catch (error) {
+          console.error('Erreur lors de la récupération des projets:', error);
+          setProjects([]);
+        }
+      };
+
+      // Fonction pour récupérer les articles (sans filtrer par utilisateur)
+      const fetchArticles = async () => {
+        try {
+          const articlesRef = collection(db, 'articles');
+          // Récupérer tous les articles sans filtrer par utilisateur
+          const snapshot = await getDocs(articlesRef);
+          const articlesList = snapshot.docs.map(doc => ({
+            ...doc.data(),
+            id: doc.id
+          })) as Article[];
+          setArticles(articlesList);
+        } catch (error) {
+          console.error('Erreur lors de la récupération des articles:', error);
+        }
+      };
+
+      // Fonction pour récupérer les fournisseurs (sans filtrer par utilisateur)
+      const fetchSuppliers = async () => {
+        try {
+          const suppliersRef = collection(db, 'suppliers');
+          // Récupérer tous les fournisseurs sans filtrer par utilisateur
+          const snapshot = await getDocs(suppliersRef);
+          const suppliersList = snapshot.docs.map(doc => ({
+            ...doc.data(),
+            id: doc.id
+          })) as Supplier[];
+          setSuppliers(suppliersList);
+        } catch (error) {
+          console.error('Erreur lors de la récupération des fournisseurs:', error);
+        }
+      };
+
+      // Exécuter les fonctions de récupération
       fetchProjects();
       fetchArticles();
       fetchSuppliers();
+      fetchExpenses(); // Récupérer les dépenses existantes
     }
-  }, [user]);
+  }, [user, fetchExpenses]);
 
   useEffect(() => {
     if (searchTerm.trim() === '') {
@@ -93,56 +196,6 @@ function Expenses() {
     );
     setFilteredArticles(filtered);
   }, [searchTerm, articles]);
-
-  const fetchSuppliers = async () => {
-    if (!user) return;
-    
-    try {
-      const suppliersRef = collection(db, 'suppliers');
-      const q = query(suppliersRef, where('userId', '==', user.uid));
-      const snapshot = await getDocs(q);
-      const suppliersList = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
-      })) as Supplier[];
-      setSuppliers(suppliersList);
-    } catch (error) {
-      console.error('Erreur lors de la récupération des fournisseurs:', error);
-    }
-  };
-
-  const fetchArticles = async () => {
-    if (!user) return;
-    
-    try {
-      const articlesRef = collection(db, 'articles');
-      const q = query(articlesRef, where('userId', '==', user.uid));
-      const snapshot = await getDocs(q);
-      const articlesList = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
-      })) as Article[];
-      setArticles(articlesList);
-    } catch (error) {
-      console.error('Erreur lors de la récupération des articles:', error);
-    }
-  };
-
-  const fetchProjects = async () => {
-    try {
-      const projectsRef = collection(db, 'projects');
-      const snapshot = await getDocs(projectsRef);
-      const projectsList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        name: doc.data().name,
-        description: doc.data().description || ''
-      }));
-      setProjects(projectsList);
-    } catch (error) {
-      console.error('Erreur lors de la récupération des projets:', error);
-      setProjects([]);
-    }
-  };
 
   // Fonction pour générer une référence de dépense unique
   const generateExpenseReference = async () => {
@@ -190,6 +243,7 @@ function Expenses() {
 
     const newItem: ExpenseItem = {
       id: Date.now().toString(),
+      expenseId: '', // Sera rempli lors de l'enregistrement de la dépense
       articleId: selectedArticle.id,
       designation: selectedArticle.designation,
       reference: selectedArticle.reference,
@@ -212,34 +266,66 @@ function Expenses() {
     setBeneficiary('');
   };
 
-  const handleRemoveItem = (itemId: string) => {
-    setItems(items.filter(item => item.id !== itemId));
+  // Fonction pour commencer l'édition d'une dépense
+  const handleEditStart = (expense: Expense) => {
+    if (!isAdmin) return;
+    
+    setEditingExpenseId(expense.id);
+    setDate(expense.date);
+    setDescription(expense.description);
+    setProjectId(expense.projectId);
+    setReference(expense.reference);
+    
+    // Charger les items de la dépense
+    if (expenseItems[expense.id]) {
+      setItems(expenseItems[expense.id]);
+    }
+    
+    setIsEditing(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || items.length === 0 || !projectId) return;
+  // Fonction pour annuler l'édition
+  const handleEditCancel = () => {
+    setEditingExpenseId(null);
+    setDate(format(new Date(), 'yyyy-MM-dd'));
+    setDescription('');
+    setProjectId('');
+    setReference('');
+    setItems([]);
+    setIsEditing(false);
+  };
+
+  // Fonction pour mettre à jour une dépense
+  const handleUpdateExpense = async () => {
+    if (!user || !projectId || !editingExpenseId) return;
 
     try {
-      // Générer une référence unique pour cette dépense
-      const expenseReference = await generateExpenseReference();
-      
-      const expenseData = {
+      const expenseRef = doc(db, 'expenses', editingExpenseId);
+      const updatedExpense = {
         date,
         description,
         projectId,
-        reference: expenseReference, // Ajouter la référence
-        userId: user.uid,
-        createdAt: new Date().toISOString()
+        reference,
+        updatedAt: new Date().toISOString()
       };
 
-      const expenseRef = await addDoc(collection(db, 'expenses'), expenseData);
+      await updateDoc(expenseRef, updatedExpense);
 
+      // Supprimer les anciens items
+      const oldItems = expenseItems[editingExpenseId] || [];
+      for (const oldItem of oldItems) {
+        const itemRef = doc(db, 'expense_items', oldItem.id);
+        await deleteDoc(itemRef);
+      }
+
+      // Ajouter les nouveaux items
       const itemsPromises = items.map(item => {
+        // On ignore l'id lors de la mise à jour des items
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { id, ...itemData } = item;
         return addDoc(collection(db, 'expense_items'), {
           ...itemData,
-          expenseId: expenseRef.id,
+          expenseId: editingExpenseId,
           userId: user.uid,
           createdAt: new Date().toISOString()
         });
@@ -247,14 +333,111 @@ function Expenses() {
 
       await Promise.all(itemsPromises);
       
-      // Réinitialiser les champs après enregistrement
-      setDate(format(new Date(), 'yyyy-MM-dd'));
-      setDescription('');
-      setProjectId('');
-      setItems([]);
+      // Rafraîchir les données
+      fetchExpenses();
       
-      // Informer l'utilisateur que la dépense a été créée
-      alert(`Dépense enregistrée avec succès! Référence: ${expenseReference}`);
+      // Réinitialiser le formulaire
+      handleEditCancel();
+      
+      // Informer l'utilisateur
+      alert('Dépense mise à jour avec succès!');
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour de la dépense:', error);
+      alert('Erreur lors de la mise à jour de la dépense');
+    }
+  };
+
+  // Fonction pour confirmer la suppression
+  const handleDeleteConfirm = (expenseId: string) => {
+    if (!isAdmin) return;
+    setDeleteConfirmId(expenseId);
+  };
+
+  // Fonction pour annuler la suppression
+  const handleDeleteCancel = () => {
+    setDeleteConfirmId(null);
+  };
+
+  // Fonction pour supprimer une dépense
+  const handleDeleteExpense = async (expenseId: string) => {
+    if (!isAdmin) return;
+
+    try {
+      // Supprimer les items de la dépense
+      const items = expenseItems[expenseId] || [];
+      for (const item of items) {
+        const itemRef = doc(db, 'expense_items', item.id);
+        await deleteDoc(itemRef);
+      }
+
+      // Supprimer la dépense
+      const expenseRef = doc(db, 'expenses', expenseId);
+      await deleteDoc(expenseRef);
+
+      // Rafraîchir les données
+      fetchExpenses();
+      
+      setDeleteConfirmId(null);
+      
+      // Informer l'utilisateur
+      alert('Dépense supprimée avec succès!');
+    } catch (error) {
+      console.error('Erreur lors de la suppression de la dépense:', error);
+      alert('Erreur lors de la suppression de la dépense');
+    }
+  };
+
+  const handleRemoveItem = (itemId: string) => {
+    setItems(items.filter(item => item.id !== itemId));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !projectId || items.length === 0) return;
+
+    try {
+      if (isEditing && editingExpenseId) {
+        // Mode édition - mettre à jour une dépense existante
+        await handleUpdateExpense();
+      } else {
+        // Mode création - ajouter une nouvelle dépense
+        // Générer une référence unique pour la dépense
+        const expenseRef = await addDoc(collection(db, 'expenses'), {
+          date,
+          description,
+          projectId,
+          reference: await generateExpenseReference(),
+          userId: user.uid,
+          createdAt: new Date().toISOString()
+        });
+
+        // Ajouter chaque item de la dépense
+        const itemsPromises = items.map(item => {
+          // On exclut l'id local car Firestore génère son propre id
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { id, ...itemData } = item;
+          return addDoc(collection(db, 'expense_items'), {
+            ...itemData,
+            expenseId: expenseRef.id,
+            userId: user.uid,
+            createdAt: new Date().toISOString()
+          });
+        });
+
+        await Promise.all(itemsPromises);
+        
+        // Réinitialiser le formulaire
+        setDate(format(new Date(), 'yyyy-MM-dd'));
+        setDescription('');
+        setProjectId('');
+        setItems([]);
+        
+        // Informer l'utilisateur
+        alert('Dépense enregistrée avec succès!');
+        
+        // Rafraîchir les données
+        fetchExpenses();
+      }
     } catch (error) {
       console.error('Erreur lors de l\'enregistrement de la dépense:', error);
       alert('Erreur lors de l\'enregistrement de la dépense');
@@ -287,8 +470,10 @@ function Expenses() {
       <h2 className="text-2xl font-bold mb-6">Dépenses</h2>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-        <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-lg p-6">
-          <h3 className="text-lg font-bold mb-4">Nouvelle dépense</h3>
+        <form onSubmit={handleSubmit} className="bg-white shadow-md rounded-lg p-6">
+          <h2 className="text-xl font-semibold mb-4">
+            {isEditing ? 'Modifier la dépense' : 'Ajouter une dépense'}
+          </h2>
           
           <div className="grid grid-cols-1 gap-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -545,20 +730,110 @@ function Expenses() {
             )}
           </div>
 
-          <div className="mt-6">
+          <div className="mt-6 flex space-x-4">
             <button
               type="submit"
               disabled={items.length === 0}
               className="inline-flex items-center px-4 py-3 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
               <Save className="w-4 h-4 mr-2" />
-              Enregistrer la dépense
+              {isEditing ? 'Mettre à jour la dépense' : 'Enregistrer la dépense'}
             </button>
+            
+            {isEditing && (
+              <button
+                type="button"
+                onClick={handleEditCancel}
+                className="inline-flex items-center px-4 py-3 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                <X className="w-4 h-4 mr-2" />
+                Annuler
+              </button>
+            )}
           </div>
         </form>
 
         <div>
           <PCAReimbursement />
+        </div>
+        
+        <div className="mt-8">
+          <h2 className="text-xl font-semibold mb-4">Dépenses enregistrées</h2>
+          
+          {expenses.length === 0 ? (
+            <p>Aucune dépense enregistrée.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white border border-gray-200">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="py-2 px-4 border-b text-left">Date</th>
+                    <th className="py-2 px-4 border-b text-left">Référence</th>
+                    <th className="py-2 px-4 border-b text-left">Projet</th>
+                    <th className="py-2 px-4 border-b text-left">Description</th>
+                    <th className="py-2 px-4 border-b text-left">Montant Total</th>
+                    {isAdmin && <th className="py-2 px-4 border-b text-center">Actions</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {expenses.map(expense => {
+                    const items = expenseItems[expense.id] || [];
+                    const totalAmount = items.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
+                    const project = projects.find(p => p.id === expense.projectId);
+                    
+                    return (
+                      <tr key={expense.id} className="hover:bg-gray-50">
+                        <td className="py-2 px-4 border-b">{format(new Date(expense.date), 'dd/MM/yyyy')}</td>
+                        <td className="py-2 px-4 border-b">{expense.reference}</td>
+                        <td className="py-2 px-4 border-b">{project?.name || 'N/A'}</td>
+                        <td className="py-2 px-4 border-b">{expense.description}</td>
+                        <td className="py-2 px-4 border-b">{totalAmount.toLocaleString('fr-FR')} FCFA</td>
+                        {isAdmin && (
+                          <td className="py-2 px-4 border-b text-center">
+                            {deleteConfirmId === expense.id ? (
+                              <div className="flex justify-center space-x-2">
+                                <button
+                                  onClick={() => handleDeleteExpense(expense.id)}
+                                  className="p-1 bg-red-500 text-white rounded hover:bg-red-600"
+                                  title="Confirmer la suppression"
+                                >
+                                  <Check size={16} />
+                                </button>
+                                <button
+                                  onClick={handleDeleteCancel}
+                                  className="p-1 bg-gray-500 text-white rounded hover:bg-gray-600"
+                                  title="Annuler"
+                                >
+                                  <X size={16} />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex justify-center space-x-2">
+                                <button
+                                  onClick={() => handleEditStart(expense)}
+                                  className="p-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+                                  title="Modifier"
+                                >
+                                  <Edit size={16} />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteConfirm(expense.id)}
+                                  className="p-1 bg-red-500 text-white rounded hover:bg-red-600"
+                                  title="Supprimer"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { Plus } from 'lucide-react';
-import { collection, getDocs, query, addDoc } from 'firebase/firestore';
+import { Plus, Edit, Trash2, X, Check } from 'lucide-react';
+import { collection, getDocs, query, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './auth/AuthContext';
 import { usePCADebt } from './usePCADebt'; // Importer le hook pour la dette PCA
@@ -45,6 +45,9 @@ export default function CashInflow() {
   const [totalExpenses, setTotalExpenses] = useState<number>(0);
   const [globalTotalInflow, setGlobalTotalInflow] = useState<number>(0);
   const [error, setError] = useState<string>('');
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
   const { user } = useAuth();
   const userRole = localStorage.getItem('userRole') || '';
   const isAdmin = localStorage.getItem('isAdmin') === 'true' || userRole === 'admin';
@@ -182,8 +185,121 @@ export default function CashInflow() {
     }
   };
 
+  // Fonction pour commencer l'édition d'une entrée
+  const handleEditStart = (entry: CashEntry) => {
+    if (!isAdmin) return;
+    
+    setEditingEntryId(entry.id);
+    setDate(entry.date);
+    setAmount(entry.amount.toString());
+    setSource(entry.source);
+    setDescription(entry.description);
+    setProjectId(entry.projectId);
+    setIsEditing(true);
+  };
+
+  // Fonction pour annuler l'édition
+  const handleEditCancel = () => {
+    setEditingEntryId(null);
+    setDate(format(new Date(), 'yyyy-MM-dd'));
+    setAmount('');
+    setSource('');
+    setDescription('');
+    setProjectId('');
+    setIsEditing(false);
+    setError('');
+  };
+
+  // Fonction pour mettre à jour une entrée
+  const handleUpdateEntry = async () => {
+    if (!user || !projectId || !editingEntryId) return;
+
+    try {
+      const entryRef = doc(db, 'cash_inflow', editingEntryId);
+      const updatedEntry = {
+        date,
+        amount: parseFloat(amount),
+        source,
+        description,
+        projectId,
+        updatedAt: new Date().toISOString()
+      };
+
+      await updateDoc(entryRef, updatedEntry);
+
+      // Mettre à jour l'entrée dans l'état local
+      const updatedEntries = entries.map(entry => 
+        entry.id === editingEntryId 
+          ? { ...entry, ...updatedEntry } 
+          : entry
+      );
+
+      setEntries(updatedEntries);
+      
+      // Si c'est une entrée PCA, rafraîchir la dette PCA
+      if (source === 'pca') {
+        refreshPCADebt();
+      }
+
+      // Réinitialiser le formulaire
+      handleEditCancel();
+      
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour de l\'entrée:', error);
+      setError('Erreur lors de la mise à jour de l\'entrée');
+    }
+  };
+
+  // Fonction pour confirmer la suppression
+  const handleDeleteConfirm = (entryId: string) => {
+    if (!isAdmin) return;
+    setDeleteConfirmId(entryId);
+  };
+
+  // Fonction pour annuler la suppression
+  const handleDeleteCancel = () => {
+    setDeleteConfirmId(null);
+  };
+
+  // Fonction pour supprimer une entrée
+  const handleDeleteEntry = async (entryId: string) => {
+    if (!isAdmin) return;
+
+    try {
+      const entryRef = doc(db, 'cash_inflow', entryId);
+      await deleteDoc(entryRef);
+
+      // Supprimer l'entrée de l'état local
+      const updatedEntries = entries.filter(entry => entry.id !== entryId);
+      setEntries(updatedEntries);
+
+      // Recalculer le total global
+      const globalTotal = updatedEntries.reduce((sum, entry) => sum + entry.amount, 0);
+      setGlobalTotalInflow(globalTotal);
+
+      // Rafraîchir la dette PCA si nécessaire
+      const deletedEntry = entries.find(entry => entry.id === entryId);
+      if (deletedEntry && deletedEntry.source === 'pca') {
+        refreshPCADebt();
+      }
+
+      setDeleteConfirmId(null);
+    } catch (error) {
+      console.error('Erreur lors de la suppression de l\'entrée:', error);
+      setError('Erreur lors de la suppression de l\'entrée');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Si on est en mode édition, mettre à jour l'entrée
+    if (isEditing && editingEntryId) {
+      await handleUpdateEntry();
+      return;
+    }
+    
+    // Sinon, créer une nouvelle entrée
     if (!user || !projectId) return;
 
     try {
@@ -266,7 +382,9 @@ export default function CashInflow() {
       </div>
 
       <form onSubmit={handleSubmit} className="mb-8 bg-white rounded-lg shadow-lg p-6">
-        <h3 className="text-lg font-bold mb-4">Nouvelle entrée</h3>
+        <h3 className="text-lg font-bold mb-4">
+          {isEditing ? 'Modifier l\'entrée' : 'Nouvelle entrée'}
+        </h3>
         
         {error && (
           <div className="mb-4 bg-red-50 border-l-4 border-red-400 p-4 rounded-r" role="alert">
@@ -340,13 +458,35 @@ export default function CashInflow() {
             />
           </div>
         </div>
-        <button
-          type="submit"
-          className="mt-4 inline-flex items-center px-4 py-3 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Ajouter
-        </button>
+        <div className="flex mt-4 space-x-2">
+          <button
+            type="submit"
+            className="inline-flex items-center px-4 py-3 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            {isEditing ? (
+              <>
+                <Check className="w-4 h-4 mr-2" />
+                Mettre à jour
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4 mr-2" />
+                Ajouter
+              </>
+            )}
+          </button>
+          
+          {isEditing && (
+            <button
+              type="button"
+              onClick={handleEditCancel}
+              className="inline-flex items-center px-4 py-3 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            >
+              <X className="w-4 h-4 mr-2" />
+              Annuler
+            </button>
+          )}
+        </div>
       </form>
 
       <div className="bg-white rounded-lg shadow-lg overflow-hidden">
@@ -358,6 +498,9 @@ export default function CashInflow() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Projet</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Montant</th>
+              {isAdmin && (
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              )}
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
@@ -380,17 +523,57 @@ export default function CashInflow() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
                     {formatPrice(entry.amount)}
                   </td>
+                  {isAdmin && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right space-x-2">
+                      {deleteConfirmId === entry.id ? (
+                        <>
+                          <button
+                            onClick={() => handleDeleteEntry(entry.id)}
+                            className="text-white bg-red-600 hover:bg-red-700 p-1 rounded-md"
+                            title="Confirmer la suppression"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={handleDeleteCancel}
+                            className="text-white bg-gray-500 hover:bg-gray-600 p-1 rounded-md"
+                            title="Annuler"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleEditStart(entry)}
+                            className="text-white bg-blue-600 hover:bg-blue-700 p-1 rounded-md"
+                            title="Modifier cette entrée"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteConfirm(entry.id)}
+                            className="text-white bg-red-600 hover:bg-red-700 p-1 rounded-md"
+                            title="Supprimer cette entrée"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}
             {entries.length > 0 && (
               <tr className="bg-gray-50">
-                <td colSpan={4} className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                <td colSpan={isAdmin ? 4 : 4} className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                   Total
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
                   {formatPrice(entries.reduce((sum, entry) => sum + entry.amount, 0))}
                 </td>
+                {isAdmin && <td></td>}
               </tr>
             )}
           </tbody>
