@@ -37,7 +37,7 @@ export default function Login() {
       
       // Déterminer le rôle et les accès en fonction du code saisi
       const ADMIN_CODE = "Admin12345"; // Code administrateur unique
-      const ENTRIES_CODE = "Dep-1234";  // Code pour accès aux entrées
+      const ENTRIES_CODE = "Dep-12345";  // Code pour accès aux entrées
       const EXPENSES_CODE = "Exp-1234"; // Code pour accès aux dépenses
       const DASHBOARD_ONLY_CODE = "PCAA"; // Code pour accès uniquement au tableau de bord
       

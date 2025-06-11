@@ -62,20 +62,17 @@ function RoleBasedRoute({ children, allowedRoles }: { children: React.ReactNode,
     return <Layout>{children}</Layout>;
   }
   
-  if (path.includes('/inflow')) {
-    // Vérifier si l'utilisateur a accès aux entrées
-    if (hasEntriesAccess) {
-      console.log('RoleBasedRoute - Accès aux entrées accordé');
-      return <Layout>{children}</Layout>;
-    }
+  // Accès aux entrées et aux projets pour les utilisateurs avec Dep-1234
+  if (hasEntriesAccess && (path.includes('/inflow') || path.includes('/projects') || path.includes('/closing'))) {
+    console.log('RoleBasedRoute - Accès aux entrées/projets/clôture accordé');
+    return <Layout>{children}</Layout>;
   }
   
-  if (path.includes('/expenses') || path.includes('/closing')) {
-    // Vérifier si l'utilisateur a accès aux dépenses
-    if (hasExpensesAccess) {
-      console.log('RoleBasedRoute - Accès aux dépenses accordé');
-      return <Layout>{children}</Layout>;
-    }
+  // Accès aux dépenses, articles, unités, fournisseurs pour les utilisateurs avec Exp-1234
+  if (hasExpensesAccess && (path.includes('/expenses') || path.includes('/articles') || 
+      path.includes('/units') || path.includes('/suppliers'))) {
+    console.log('RoleBasedRoute - Accès aux dépenses/articles/unités/fournisseurs accordé');
+    return <Layout>{children}</Layout>;
   }
   
   // Si on arrive ici, c'est que l'utilisateur n'a pas les droits nécessaires
@@ -105,7 +102,7 @@ function App() {
           <Route
             path="/projects"
             element={
-              <RoleBasedRoute allowedRoles={['admin']}>
+              <RoleBasedRoute allowedRoles={['admin', 'user']}>
                 <Projects />
               </RoleBasedRoute>
             }
@@ -113,7 +110,7 @@ function App() {
           <Route
             path="/projects/:projectId"
             element={
-              <RoleBasedRoute allowedRoles={['admin']}>
+              <RoleBasedRoute allowedRoles={['admin', 'user']}>
                 <ProjectDetails />
               </RoleBasedRoute>
             }
