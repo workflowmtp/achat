@@ -61,7 +61,7 @@ export default function CashInflow() {
     { id: 'bank', label: 'Compte bancaire' },
     { id: 'pca', label: 'Compte PCA' },
     { id: 'granule', label: 'Vente Granule' },
-    { id: 'espece', label: 'Vente d\'espèce' }
+    { id: 'espece', label: 'Vente d\'espèce client' }
   ];
 
   // Définir fetchTotalExpenses avec useCallback - calcul global pour tous les utilisateurs

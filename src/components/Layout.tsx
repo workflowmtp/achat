@@ -22,6 +22,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const userRole = localStorage.getItem('userRole') || '';
   const hasEntriesAccess = localStorage.getItem('accessEntries') === 'true';
   const hasExpensesAccess = localStorage.getItem('accessExpenses') === 'true';
+  const hasHistoryAccess = localStorage.getItem('accessHistory') === 'true';
 
   // Définir fetchNotifications avec useCallback pour éviter les re-rendus inutiles
   const fetchNotifications = React.useCallback(async () => {
@@ -69,8 +70,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { id: 'users', label: 'Utilisateurs', icon: UserCog, path: '/users' },
         { id: 'suppliers', label: 'Fournisseurs', icon: Users, path: '/suppliers' },
         { id: 'inflow', label: 'Entrées', icon: Wallet, path: '/inflow' },
+        { id: 'inflow-history', label: 'Historique Entrées', icon: History, path: '/inflow/history' },
         { id: 'expenses', label: 'Dépenses', icon: Receipt, path: '/expenses' },
-        { id: 'expense-history', label: 'Historique', icon: History, path: '/expenses/history' },
+        { id: 'expense-history', label: 'Historique Dépenses', icon: History, path: '/expenses/history' },
         { id: 'closing', label: 'Clôture', icon: PiggyBank, path: '/closing' },
       ];
     } else if (userRole === 'user') {
@@ -89,6 +91,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         userTabs.push({ id: 'inflow', label: 'Entrées', icon: Wallet, path: '/inflow' });
         userTabs.push({ id: 'closing', label: 'Clôture', icon: PiggyBank, path: '/closing' });
         userTabs.push({ id: 'projects', label: 'Projets', icon: FolderKanban, path: '/projects' });
+        
+        // Ajouter l'historique des entrées si l'utilisateur a accès à l'historique
+        if (hasHistoryAccess) {
+          userTabs.push({ id: 'inflow-history', label: 'Historique Entrées', icon: History, path: '/inflow/history' });
+        }
       }
       
       if (hasExpensesAccess) {

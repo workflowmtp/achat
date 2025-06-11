@@ -17,6 +17,7 @@ import Suppliers from './components/Suppliers';
 import CashInflow from './components/CashInflow';
 import Expenses from './components/Expenses';
 import ExpenseHistory from './components/ExpenseHistory';
+import CashInflowHistory from './components/CashInflowHistory';
 import Closing from './components/Closing';
 import Users from './components/Users';
 
@@ -62,9 +63,16 @@ function RoleBasedRoute({ children, allowedRoles }: { children: React.ReactNode,
     return <Layout>{children}</Layout>;
   }
   
-  // Accès aux entrées et aux projets pour les utilisateurs avec Dep-1234
+  // Accès aux entrées, historique des entrées et aux projets pour les utilisateurs avec Dep-1234
   if (hasEntriesAccess && (path.includes('/inflow') || path.includes('/projects') || path.includes('/closing'))) {
     console.log('RoleBasedRoute - Accès aux entrées/projets/clôture accordé');
+    return <Layout>{children}</Layout>;
+  }
+  
+  // Accès à l'historique des entrées pour les utilisateurs avec Dep-1234
+  const hasHistoryAccess = localStorage.getItem('accessHistory') === 'true';
+  if (hasHistoryAccess && path.includes('/inflow/history')) {
+    console.log('RoleBasedRoute - Accès à l\'historique des entrées accordé');
     return <Layout>{children}</Layout>;
   }
   
@@ -168,6 +176,14 @@ function App() {
             element={
               <RoleBasedRoute allowedRoles={['admin', 'user']}>
                 <ExpenseHistory />
+              </RoleBasedRoute>
+            }
+          />
+          <Route
+            path="/inflow/history"
+            element={
+              <RoleBasedRoute allowedRoles={['admin', 'user']}>
+                <CashInflowHistory />
               </RoleBasedRoute>
             }
           />

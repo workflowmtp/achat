@@ -45,6 +45,7 @@ export default function Login() {
       let isAdmin = false;
       let accessEntries = false;
       let accessExpenses = false;
+      let accessHistory = false;
 
       // Attribution des rôles basée uniquement sur le code d'accès
       if (accessCode === ADMIN_CODE) {
@@ -53,14 +54,16 @@ export default function Login() {
         userRole = 'admin';
         accessEntries = true;
         accessExpenses = true;
+        accessHistory = true;
         localStorage.setItem('isAdmin', 'true');
         console.log('Connexion administrateur réussie');
       } else if (accessCode === ENTRIES_CODE) {
-        // Utilisateur standard avec accès aux entrées uniquement
+        // Utilisateur standard avec accès aux entrées et historique
         userRole = 'user';
         accessEntries = true;
+        accessHistory = true; // Ajout de l'accès à l'historique
         localStorage.removeItem('isAdmin');
-        console.log('Connexion utilisateur (accès entrées) réussie');
+        console.log('Connexion utilisateur (accès entrées et historique) réussie');
       } else if (accessCode === EXPENSES_CODE) {
         // Utilisateur standard avec accès aux dépenses uniquement
         userRole = 'user';
@@ -72,6 +75,7 @@ export default function Login() {
         userRole = 'dashboard_only';
         accessEntries = false;
         accessExpenses = false;
+        accessHistory = false;
         localStorage.removeItem('isAdmin');
         console.log('Connexion utilisateur (accès tableau de bord uniquement) réussie');
       } else {
@@ -84,6 +88,7 @@ export default function Login() {
       localStorage.setItem('userRole', userRole);
       localStorage.setItem('accessEntries', accessEntries.toString());
       localStorage.setItem('accessExpenses', accessExpenses.toString());
+      localStorage.setItem('accessHistory', accessHistory.toString());
       
       // Mise à jour optionnelle du rôle dans Firestore
       // Ceci est facultatif si vous préférez déterminer les accès uniquement via le code

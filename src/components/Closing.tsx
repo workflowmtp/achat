@@ -33,20 +33,43 @@ export default function Closing() {
   const [notes, setNotes] = useState('');
   const { user } = useAuth();
 
-  // Utilisation de useCallback pour éviter les problèmes de dépendances dans useEffect
+  // Récupérer le solde initial (qui est le solde final de la dernière clôture)
   const fetchInitialBalance = useCallback(async () => {
     try {
-      // Fetch all cash inflow entries - GLOBAL pour tous les utilisateurs
-      const inflowRef = collection(db, 'cash_inflow');
-      const q = query(inflowRef); // Récupérer toutes les entrées sans filtrer par utilisateur
-      const snapshot = await getDocs(q);
-      const entries = snapshot.docs.map(doc => doc.data() as CashEntry);
+      // 1. Vérifier s'il existe des clôtures précédentes
+      const closingsRef = collection(db, 'closings');
+      const closingsQuery = query(closingsRef);
+      const closingsSnapshot = await getDocs(closingsQuery);
+      const allClosings = closingsSnapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      })) as ClosingEntry[];
       
-      // Calculate total inflow
-      const totalInflow = entries.reduce((sum, entry) => sum + entry.amount, 0);
+      // Trier les clôtures par date (la plus récente en premier)
+      const sortedClosings = allClosings.sort((a, b) => {
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      });
       
-      setInitialBalance(totalInflow);
-      setFinalBalance(totalInflow.toString()); // Set final balance equal to initial balance
+      // 2. S'il existe une clôture précédente, utiliser son solde final comme solde initial
+      if (sortedClosings.length > 0) {
+        const lastClosing = sortedClosings[0];
+        console.log('Dernière clôture trouvée:', lastClosing);
+        setInitialBalance(lastClosing.finalBalance);
+        setFinalBalance(lastClosing.finalBalance.toString());
+      } else {
+        // 3. S'il n'y a pas de clôture précédente, calculer le solde à partir des entrées de caisse
+        const inflowRef = collection(db, 'cash_inflow');
+        const q = query(inflowRef);
+        const snapshot = await getDocs(q);
+        const entries = snapshot.docs.map(doc => doc.data() as CashEntry);
+        
+        // Calculer le total des entrées
+        const totalInflow = entries.reduce((sum, entry) => sum + entry.amount, 0);
+        
+        console.log('Aucune clôture précédente, solde initial calculé:', totalInflow);
+        setInitialBalance(totalInflow);
+        setFinalBalance(totalInflow.toString());
+      }
     } catch (error) {
       console.error('Erreur lors de la récupération du solde initial:', error);
     }
@@ -75,28 +98,54 @@ export default function Closing() {
     }
   }, [user, fetchClosings, fetchInitialBalance]);
 
+  // Calculer la différence entre le solde final et le solde initial
+  const calculateDifference = () => {
+    const final = parseFloat(finalBalance) || 0;
+    return final - initialBalance;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
+    // Validation du solde final
+    if (!finalBalance || isNaN(parseFloat(finalBalance))) {
+      alert('Veuillez entrer un solde final valide');
+      return;
+    }
+
     try {
+      const finalBalanceNum = parseFloat(finalBalance);
+      const difference = calculateDifference();
+      
       const newClosing: Omit<ClosingEntry, 'id'> = {
         date: format(new Date(), 'yyyy-MM-dd'),
         initialBalance: initialBalance,
-        finalBalance: parseFloat(finalBalance),
-        difference: parseFloat(finalBalance) - initialBalance,
+        finalBalance: finalBalanceNum,
+        difference: difference,
         notes,
         userId: user.uid
       };
       
       const docRef = await addDoc(collection(db, 'closings'), newClosing);
-      setClosings([...closings, { ...newClosing, id: docRef.id }]);
       
-      // Reset form but keep the initial balance
+      // Ajouter la nouvelle clôture à la liste et trier par date (la plus récente en premier)
+      const updatedClosings = [...closings, { ...newClosing, id: docRef.id }]
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
+      setClosings(updatedClosings);
+      
+      // Reset form
       setNotes('');
-      await fetchInitialBalance(); // Refresh the initial balance
+      
+      // Le solde initial de la prochaine clôture sera le solde final de celle-ci
+      setInitialBalance(finalBalanceNum);
+      setFinalBalance(finalBalanceNum.toString());
+      
+      alert('Clôture enregistrée avec succès!');
     } catch (error) {
       console.error('Erreur lors de l\'ajout de la clôture:', error);
+      alert('Erreur lors de l\'enregistrement de la clôture');
     }
   };
 
@@ -104,7 +153,7 @@ export default function Closing() {
     <div>
       <h2 className="text-2xl font-bold mb-6">Clôture de caisse</h2>
       
-      <form onSubmit={handleSubmit} className="mb-8">
+      <form onSubmit={handleSubmit} className="mb-8 bg-white p-6 rounded-lg shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Solde initial</label>
@@ -114,15 +163,19 @@ export default function Closing() {
               className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-4 py-3 bg-gray-100"
               disabled
             />
+            <p className="text-xs text-gray-500 mt-1">Solde final de la dernière clôture</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Solde final</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Solde final (actuel)</label>
             <input
-              type="text"
+              type="number"
               value={finalBalance}
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-4 py-3 bg-gray-100"
-              disabled
+              onChange={(e) => setFinalBalance(e.target.value)}
+              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-4 py-3"
+              placeholder="Entrez le solde actuel de la caisse"
+              required
             />
+            <p className="text-xs text-gray-500 mt-1">Solde actuel de la caisse</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
@@ -130,10 +183,24 @@ export default function Closing() {
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-4 py-3 bg-blue-50"
+              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-4 py-3"
               placeholder="Notes de clôture"
             />
           </div>
+        </div>
+        
+        {/* Indicateur de différence */}
+        <div className="mt-4 p-3 rounded-md" style={{ backgroundColor: calculateDifference() >= 0 ? '#f0fdf4' : '#fef2f2' }}>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Différence:</span>
+            <span className={`font-bold ${calculateDifference() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {calculateDifference() >= 0 ? '+' : ''}{formatPrice(calculateDifference())}
+            </span>
+          </div>
+          <p className="text-xs mt-1" style={{ color: calculateDifference() >= 0 ? '#166534' : '#991b1b' }}>
+            {calculateDifference() > 0 ? 'Excédent de caisse' : 
+             calculateDifference() < 0 ? 'Déficit de caisse' : 'Caisse équilibrée'}
+          </p>
         </div>
         <button
           type="submit"
@@ -144,37 +211,51 @@ export default function Closing() {
         </button>
       </form>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Solde initial</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Solde final</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Différence</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {closings.map((closing) => (
-              <tr key={closing.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{closing.date}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                  {formatPrice(closing.initialBalance)}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                  {formatPrice(closing.finalBalance)}
-                </td>
-                <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${
-                  closing.difference >= 0 ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {formatPrice(closing.difference)}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{closing.notes}</td>
+      <div className="mt-8">
+        <h3 className="text-xl font-semibold mb-4">Historique des clôtures</h3>
+        <div className="overflow-x-auto bg-white rounded-lg shadow">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Solde initial</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Solde final</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Différence</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {closings.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">Aucune clôture enregistrée</td>
+                </tr>
+              ) : (
+                closings.map((closing) => (
+                  <tr key={closing.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{closing.date}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                      {formatPrice(closing.initialBalance)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                      {formatPrice(closing.finalBalance)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                      <div className="flex items-center justify-end">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          closing.difference > 0 ? 'bg-green-100 text-green-800' : 
+                          closing.difference < 0 ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {closing.difference > 0 ? '+' : ''}{formatPrice(closing.difference)}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{closing.notes}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
