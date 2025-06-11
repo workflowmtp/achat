@@ -37,7 +37,7 @@ export default function Login() {
       
       // Déterminer le rôle et les accès en fonction du code saisi
       const ADMIN_CODE = "Admin12345"; // Code administrateur unique
-      const ENTRIES_CODE = "Dep-12345";  // Code pour accès aux entrées
+      const ENTRIES_CODE = "Dep-12345";  // Code pour accès aux entrées et historiques
       const EXPENSES_CODE = "Exp-1234"; // Code pour accès aux dépenses
       const DASHBOARD_ONLY_CODE = "PCAA"; // Code pour accès uniquement au tableau de bord
       
@@ -58,12 +58,13 @@ export default function Login() {
         localStorage.setItem('isAdmin', 'true');
         console.log('Connexion administrateur réussie');
       } else if (accessCode === ENTRIES_CODE) {
-        // Utilisateur standard avec accès aux entrées et historique
+        // Utilisateur standard avec accès aux entrées et historiques
         userRole = 'user';
         accessEntries = true;
-        accessHistory = true; // Ajout de l'accès à l'historique
+        accessHistory = true; // Accès aux historiques (entrées et dépenses)
+        accessExpenses = false; // Pas d'accès à la gestion des dépenses
         localStorage.removeItem('isAdmin');
-        console.log('Connexion utilisateur (accès entrées et historique) réussie');
+        console.log('Connexion utilisateur (accès entrées et historiques) réussie');
       } else if (accessCode === EXPENSES_CODE) {
         // Utilisateur standard avec accès aux dépenses uniquement
         userRole = 'user';

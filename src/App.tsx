@@ -69,10 +69,10 @@ function RoleBasedRoute({ children, allowedRoles }: { children: React.ReactNode,
     return <Layout>{children}</Layout>;
   }
   
-  // Accès à l'historique des entrées pour les utilisateurs avec Dep-1234
+  // Accès aux historiques pour les utilisateurs avec Dep-12345
   const hasHistoryAccess = localStorage.getItem('accessHistory') === 'true';
-  if (hasHistoryAccess && path.includes('/inflow/history')) {
-    console.log('RoleBasedRoute - Accès à l\'historique des entrées accordé');
+  if (hasHistoryAccess && (path.includes('/inflow/history') || path.includes('/expenses/history'))) {
+    console.log('RoleBasedRoute - Accès aux historiques (entrées/dépenses) accordé');
     return <Layout>{children}</Layout>;
   }
   

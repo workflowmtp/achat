@@ -95,12 +95,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         // Ajouter l'historique des entrées si l'utilisateur a accès à l'historique
         if (hasHistoryAccess) {
           userTabs.push({ id: 'inflow-history', label: 'Historique Entrées', icon: History, path: '/inflow/history' });
+          // Ajouter aussi l'historique des dépenses, même si l'utilisateur n'a pas accès aux dépenses
+          userTabs.push({ id: 'expense-history', label: 'Historique Dépenses', icon: History, path: '/expenses/history' });
         }
       }
       
       if (hasExpensesAccess) {
         userTabs.push({ id: 'expenses', label: 'Dépenses', icon: Receipt, path: '/expenses' });
-        userTabs.push({ id: 'expense-history', label: 'Historique', icon: History, path: '/expenses/history' });
+        
         userTabs.push({ id: 'articles', label: 'Articles', icon: Package, path: '/articles' });
         userTabs.push({ id: 'units', label: 'Unités', icon: Ruler, path: '/units' });
         userTabs.push({ id: 'suppliers', label: 'Fournisseurs', icon: Users, path: '/suppliers' });
