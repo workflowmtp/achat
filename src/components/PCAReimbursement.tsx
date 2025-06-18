@@ -36,7 +36,7 @@ export default function PCAReimbursement() {
       await addDoc(collection(db, 'pca_reimbursements'), {
         amount: reimbursementAmount,
         description,
-        userId: user!.uid,
+        userId: user ? user.uid : 'system', // Conserver l'utilisateur pour la traçabilité si disponible
         date: format(new Date(), 'yyyy-MM-dd'),
         createdAt: new Date().toISOString()
       });
@@ -45,8 +45,8 @@ export default function PCAReimbursement() {
       const expenseRef = await addDoc(collection(db, 'expenses'), {
         date: format(new Date(), 'yyyy-MM-dd'),
         description: `Remboursement PCA: ${description}`,
-        projectId: 'pca_remboursement', // Créer un projet spécifique pour les remboursements PCA
-        userId: user!.uid,
+        projectId: 'pca_remboursement', // Projet spécifique pour les remboursements PCA
+        userId: user ? user.uid : 'system', // Conserver l'utilisateur pour la traçabilité si disponible
         createdAt: new Date().toISOString()
       });
       
@@ -62,7 +62,7 @@ export default function PCAReimbursement() {
         supplierId: "pca_internal", // Identifiant interne pour PCA
         amountGiven: reimbursementAmount, // Montant remis (égal au montant total car payé intégralement)
         beneficiary: "PCA",
-        userId: user!.uid,
+        userId: user ? user.uid : 'system', // Conserver l'utilisateur pour la traçabilité si disponible
         createdAt: new Date().toISOString()
       });
 
@@ -72,7 +72,7 @@ export default function PCAReimbursement() {
         type: 'pca_reimbursement',
         read: false,
         createdAt: new Date().toISOString(),
-        userId: user!.uid
+        userId: user ? user.uid : 'system' // Conserver l'utilisateur pour la traçabilité si disponible
       });
 
       // 5. Rafraîchir le calcul de la dette PCA

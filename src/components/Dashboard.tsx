@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Euro, TrendingUp, TrendingDown, Activity } from 'lucide-react';
+import { Euro, TrendingUp, TrendingDown, Activity, AlertCircle } from 'lucide-react';
 import { collection, query, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { startOfDay, endOfDay } from 'date-fns';
+import { usePCADebt } from './usePCADebt';
 
 interface CashEntry {
   id: string;
@@ -38,6 +39,9 @@ export default function Dashboard() {
   const [dailyTransactions, setDailyTransactions] = useState(0);
   const [recentInflows, setRecentInflows] = useState<CashEntry[]>([]);
   const [recentExpenses, setRecentExpenses] = useState<Expense[]>([]);
+  
+  // Utiliser le hook personnalisé pour calculer la dette PCA
+  const { pcaDebt, loading: loadingPCADebt } = usePCADebt();
 
   const fetchDashboardData = useCallback(async () => {
     // Retirer la condition user pour permettre l'affichage des données même sans utilisateur connecté
@@ -153,6 +157,8 @@ export default function Dashboard() {
       // Calculate daily transactions count
       const dailyTransactionsCount = todayInflow.length + todayExpenses.length;
       
+      // La dette PCA est maintenant calculée par le hook usePCADebt
+      
       // Logs de débogage
       console.log('Entrées récentes récupérées:', sortedInflows);
       console.log('Dépenses récentes récupérées:', sortedExpenses);
@@ -162,6 +168,7 @@ export default function Dashboard() {
       setDailyInflow(todayInflowTotal);
       setDailyExpenses(todayExpensesTotal);
       setDailyTransactions(dailyTransactionsCount);
+      // La dette PCA est gérée par le hook usePCADebt
       setRecentInflows(sortedInflows);
       setRecentExpenses(sortedExpenses);
     } catch (error) {
@@ -171,6 +178,7 @@ export default function Dashboard() {
       setDailyInflow(0);
       setDailyExpenses(0);
       setDailyTransactions(0);
+      // La dette PCA est gérée par le hook usePCADebt
     }
   }, []);
 
@@ -191,6 +199,7 @@ export default function Dashboard() {
     { name: 'Solde actuel', value: formatPrice(currentBalance), icon: Euro, color: 'bg-blue-500' },
     { name: 'Entrées du jour', value: formatPrice(dailyInflow), icon: TrendingUp, color: 'bg-green-500' },
     { name: 'Dépenses du jour', value: formatPrice(dailyExpenses), icon: TrendingDown, color: 'bg-red-500' },
+    { name: 'Dette PCA', value: loadingPCADebt ? 'Chargement...' : formatPrice(pcaDebt), icon: AlertCircle, color: 'bg-orange-500' },
     { name: 'Transactions du jour', value: dailyTransactions.toString(), icon: Activity, color: 'bg-purple-500' }
   ];
 

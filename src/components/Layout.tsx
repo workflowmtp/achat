@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { Wallet, Receipt, PiggyBank, BarChart3, FolderKanban, LogOut, Package, Bell, History, Ruler, Users, UserCog } from 'lucide-react';
+import { Wallet, Receipt, PiggyBank, BarChart3, FolderKanban, LogOut, Package, Bell, History, Ruler, Users, UserCog, CreditCard } from 'lucide-react';
 import { useAuth } from './auth/AuthContext';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -71,6 +71,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { id: 'suppliers', label: 'Fournisseurs', icon: Users, path: '/suppliers' },
         { id: 'inflow', label: 'Entrées', icon: Wallet, path: '/inflow' },
         { id: 'inflow-history', label: 'Historique Entrées', icon: History, path: '/inflow/history' },
+        { id: 'pca-reimbursement', label: 'Remboursement PCA', icon: CreditCard, path: '/pca-reimbursement' },
         { id: 'expenses', label: 'Dépenses', icon: Receipt, path: '/expenses' },
         { id: 'expense-history', label: 'Historique Dépenses', icon: History, path: '/expenses/history' },
         { id: 'activity-history', label: 'Historique Activités', icon: BarChart3, path: '/activity-history' },
@@ -90,6 +91,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       // Ajouter les onglets en fonction des permissions
       if (hasEntriesAccess) {
         userTabs.push({ id: 'inflow', label: 'Entrées', icon: Wallet, path: '/inflow' });
+        userTabs.push({ id: 'pca-reimbursement', label: 'Remboursement PCA', icon: CreditCard, path: '/pca-reimbursement' });
         userTabs.push({ id: 'closing', label: 'Clôture', icon: PiggyBank, path: '/closing' });
         userTabs.push({ id: 'projects', label: 'Projets', icon: FolderKanban, path: '/projects' });
         

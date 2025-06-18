@@ -21,6 +21,7 @@ import CashInflowHistory from './components/CashInflowHistory';
 import ActivityHistory from './components/ActivityHistory';
 import Closing from './components/Closing';
 import Users from './components/Users';
+import PCAReimbursement from './components/PCAReimbursement';
 
 // Route pour les utilisateurs avec des accès spécifiques
 function RoleBasedRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles: string[] }) {
@@ -64,9 +65,9 @@ function RoleBasedRoute({ children, allowedRoles }: { children: React.ReactNode,
     return <Layout>{children}</Layout>;
   }
   
-  // Accès aux entrées, historique des entrées et aux projets pour les utilisateurs avec Dep-1234
-  if (hasEntriesAccess && (path.includes('/inflow') || path.includes('/projects') || path.includes('/closing'))) {
-    console.log('RoleBasedRoute - Accès aux entrées/projets/clôture accordé');
+  // Accès aux entrées, historique des entrées, remboursement PCA et aux projets pour les utilisateurs avec Dep-1234
+  if (hasEntriesAccess && (path.includes('/inflow') || path.includes('/projects') || path.includes('/closing') || path.includes('/pca-reimbursement'))) {
+    console.log('RoleBasedRoute - Accès aux entrées/projets/clôture/remboursement PCA accordé');
     return <Layout>{children}</Layout>;
   }
   
@@ -193,6 +194,14 @@ function App() {
             element={
               <RoleBasedRoute allowedRoles={['admin']}>
                 <ActivityHistory />
+              </RoleBasedRoute>
+            }
+          />
+          <Route
+            path="/pca-reimbursement"
+            element={
+              <RoleBasedRoute allowedRoles={['admin', 'user']}>
+                <PCAReimbursement />
               </RoleBasedRoute>
             }
           />
