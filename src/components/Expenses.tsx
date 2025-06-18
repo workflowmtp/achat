@@ -4,6 +4,7 @@ import { Plus, Trash2, Save, Search, Edit, X, Check } from 'lucide-react';
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './auth/AuthContext';
+import { logActivity, ActivityType, EntityType } from '../utils/activityLogger';
 import PCAReimbursement from './PCAReimbursement';
 
 interface Project {
@@ -309,6 +310,10 @@ const Expenses: React.FC = () => {
         updatedAt: new Date().toISOString()
       };
 
+      // Trouver le projet pour le log d'activité
+      const project = projects.find(p => p.id === projectId);
+      const projectName = project ? project.name : 'Projet inconnu';
+
       await updateDoc(expenseRef, updatedExpense);
 
       // Supprimer les anciens items
@@ -316,9 +321,23 @@ const Expenses: React.FC = () => {
       for (const oldItem of oldItems) {
         const itemRef = doc(db, 'expense_items', oldItem.id);
         await deleteDoc(itemRef);
+        
+        // Journaliser la suppression de l'item
+        await logActivity(
+          user.uid,
+          user.displayName || user.email || 'Utilisateur inconnu',
+          ActivityType.DELETE,
+          EntityType.EXPENSE_ITEM,
+          oldItem.id,
+          oldItem,
+          `Item de dépense supprimé lors de la mise à jour de la dépense ${reference}`,
+          projectId,
+          projectName
+        );
       }
 
       // Ajouter les nouveaux items
+      const newItems: ExpenseItem[] = [];
       const itemsPromises = items.map(item => {
         // On ignore l'id lors de la mise à jour des items
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -328,10 +347,39 @@ const Expenses: React.FC = () => {
           expenseId: editingExpenseId,
           userId: user.uid,
           createdAt: new Date().toISOString()
+        }).then(docRef => {
+          const newItem = {
+            id: docRef.id,
+            ...itemData,
+            expenseId: editingExpenseId,
+            userId: user.uid
+          };
+          newItems.push(newItem);
+          return docRef;
         });
       });
 
       await Promise.all(itemsPromises);
+      
+      // Journaliser la mise à jour de la dépense avec ses nouveaux items
+      const completeExpense = {
+        ...updatedExpense,
+        id: editingExpenseId,
+        userId: user.uid,
+        items: newItems
+      };
+      
+      await logActivity(
+        user.uid,
+        user.displayName || user.email || 'Utilisateur inconnu',
+        ActivityType.UPDATE,
+        EntityType.EXPENSE,
+        editingExpenseId,
+        completeExpense,
+        `Dépense mise à jour: ${reference}`,
+        projectId,
+        projectName
+      );
       
       // Rafraîchir les données
       fetchExpenses();
@@ -360,19 +408,62 @@ const Expenses: React.FC = () => {
 
   // Fonction pour supprimer une dépense
   const handleDeleteExpense = async (expenseId: string) => {
-    if (!isAdmin) return;
+    if (!isAdmin || !user) return;
 
     try {
+      // Récupérer les informations de la dépense pour le log
+      const expense = expenses.find(e => e.id === expenseId);
+      if (!expense) {
+        console.error('Dépense non trouvée');
+        return;
+      }
+
+      // Trouver le projet pour le log d'activité
+      const project = projects.find(p => p.id === expense.projectId);
+      const projectName = project ? project.name : 'Projet inconnu';
+
+      // Créer une copie complète de la dépense avec ses items pour le log
+      const expenseToLog = {
+        ...expense,
+        items: expenseItems[expenseId] || []
+      };
+
       // Supprimer les items de la dépense
       const items = expenseItems[expenseId] || [];
       for (const item of items) {
         const itemRef = doc(db, 'expense_items', item.id);
         await deleteDoc(itemRef);
+
+        // Journaliser la suppression de chaque item
+        await logActivity(
+          user.uid,
+          user.displayName || user.email || 'Utilisateur inconnu',
+          ActivityType.DELETE,
+          EntityType.EXPENSE_ITEM,
+          item.id,
+          item,
+          `Item de dépense supprimé suite à la suppression de la dépense ${expense.reference}`,
+          expense.projectId,
+          projectName
+        );
       }
 
       // Supprimer la dépense
       const expenseRef = doc(db, 'expenses', expenseId);
       await deleteDoc(expenseRef);
+
+      // Journaliser la suppression de la dépense
+      await logActivity(
+        user.uid,
+        user.displayName || user.email || 'Utilisateur inconnu',
+        ActivityType.DELETE,
+        EntityType.EXPENSE,
+        expenseId,
+        expenseToLog,
+        `Dépense supprimée: ${expense.reference}`,
+        expense.projectId,
+        projectName
+      );
 
       // Rafraîchir les données
       fetchExpenses();
@@ -401,17 +492,25 @@ const Expenses: React.FC = () => {
         await handleUpdateExpense();
       } else {
         // Mode création - ajouter une nouvelle dépense
+        // Trouver le projet pour le log d'activité
+        const project = projects.find(p => p.id === projectId);
+        const projectName = project ? project.name : 'Projet inconnu';
+        
         // Générer une référence unique pour la dépense
+        const newReference = await generateExpenseReference();
+        
+        // Créer la dépense
         const expenseRef = await addDoc(collection(db, 'expenses'), {
           date,
           description,
           projectId,
-          reference: await generateExpenseReference(),
+          reference: newReference,
           userId: user.uid,
           createdAt: new Date().toISOString()
         });
 
         // Ajouter chaque item de la dépense
+        const newItems: ExpenseItem[] = [];
         const itemsPromises = items.map(item => {
           // On exclut l'id local car Firestore génère son propre id
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -421,10 +520,57 @@ const Expenses: React.FC = () => {
             expenseId: expenseRef.id,
             userId: user.uid,
             createdAt: new Date().toISOString()
+          }).then(docRef => {
+            const newItem = {
+              id: docRef.id,
+              ...itemData,
+              expenseId: expenseRef.id,
+              userId: user.uid
+            };
+            newItems.push(newItem);
+            return docRef;
           });
         });
 
         await Promise.all(itemsPromises);
+        
+        // Journaliser la création de la dépense
+        const completeExpense = {
+          id: expenseRef.id,
+          date,
+          description,
+          projectId,
+          reference: newReference,
+          userId: user.uid,
+          items: newItems
+        };
+        
+        await logActivity(
+          user.uid,
+          user.displayName || user.email || 'Utilisateur inconnu',
+          ActivityType.CREATE,
+          EntityType.EXPENSE,
+          expenseRef.id,
+          completeExpense,
+          `Nouvelle dépense créée: ${newReference}`,
+          projectId,
+          projectName
+        );
+        
+        // Journaliser la création de chaque item
+        for (const item of newItems) {
+          await logActivity(
+            user.uid,
+            user.displayName || user.email || 'Utilisateur inconnu',
+            ActivityType.CREATE,
+            EntityType.EXPENSE_ITEM,
+            item.id,
+            item,
+            `Item de dépense créé pour la dépense ${newReference}`,
+            projectId,
+            projectName
+          );
+        }
         
         // Réinitialiser le formulaire
         setDate(format(new Date(), 'yyyy-MM-dd'));

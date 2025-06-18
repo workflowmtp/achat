@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -19,20 +19,32 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
+// Configure authentication persistence
+setPersistence(auth, browserLocalPersistence)
+  .then(() => {
+    console.log('Auth persistence configured successfully');
+  })
+  .catch((error) => {
+    console.error('Error configuring auth persistence:', error);
+  });
+
 // Enable offline persistence
 const setupPersistence = async () => {
   try {
-    await enableIndexedDbPersistence(db, {
-      synchronizeTabs: true
-    });
+    await enableIndexedDbPersistence(db);
     console.log('Offline persistence enabled');
-  } catch (error) {
-    if (error.code === 'failed-precondition') {
-      console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time');
-    } else if (error.code === 'unimplemented') {
-      console.warn('The current browser doesn\'t support persistence');
+  } catch (error: unknown) {
+    if (typeof error === 'object' && error !== null && 'code' in error) {
+      const errorWithCode = error as { code: string };
+      if (errorWithCode.code === 'failed-precondition') {
+        console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time');
+      } else if (errorWithCode.code === 'unimplemented') {
+        console.warn('The current browser\'s doesn\'t support persistence');
+      } else {
+        console.error('Error enabling persistence:', error);
+      }
     } else {
-      console.error('Error enabling persistence:', error);
+      console.error('Unknown error enabling persistence:', error);
     }
   }
 };

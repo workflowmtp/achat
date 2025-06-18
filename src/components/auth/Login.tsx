@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../firebase';
 import { useNavigate, Link } from 'react-router-dom';
@@ -13,6 +13,27 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  
+  // Vérifier si l'utilisateur est déjà connecté au chargement du composant
+  useEffect(() => {
+    const checkAuth = async () => {
+      // Vérifier si nous avons un ID utilisateur dans le localStorage
+      const storedUserId = localStorage.getItem('currentUserId');
+      const storedUserRole = localStorage.getItem('userRole');
+      
+      if (storedUserId && storedUserRole) {
+        console.log('Session existante détectée, redirection...');
+        // Rediriger l'utilisateur en fonction de son rôle stocké
+        if (storedUserRole === 'dashboard_only') {
+          navigate('/dashboard');
+        } else {
+          navigate('/dashboard');
+        }
+      }
+    };
+    
+    checkAuth();
+  }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

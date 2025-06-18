@@ -18,6 +18,7 @@ import CashInflow from './components/CashInflow';
 import Expenses from './components/Expenses';
 import ExpenseHistory from './components/ExpenseHistory';
 import CashInflowHistory from './components/CashInflowHistory';
+import ActivityHistory from './components/ActivityHistory';
 import Closing from './components/Closing';
 import Users from './components/Users';
 
@@ -184,6 +185,14 @@ function App() {
             element={
               <RoleBasedRoute allowedRoles={['admin', 'user']}>
                 <CashInflowHistory />
+              </RoleBasedRoute>
+            }
+          />
+          <Route
+            path="/activity-history"
+            element={
+              <RoleBasedRoute allowedRoles={['admin']}>
+                <ActivityHistory />
               </RoleBasedRoute>
             }
           />

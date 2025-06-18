@@ -73,6 +73,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { id: 'inflow-history', label: 'Historique Entrées', icon: History, path: '/inflow/history' },
         { id: 'expenses', label: 'Dépenses', icon: Receipt, path: '/expenses' },
         { id: 'expense-history', label: 'Historique Dépenses', icon: History, path: '/expenses/history' },
+        { id: 'activity-history', label: 'Historique Activités', icon: BarChart3, path: '/activity-history' },
         { id: 'closing', label: 'Clôture', icon: PiggyBank, path: '/closing' },
       ];
     } else if (userRole === 'user') {
@@ -102,6 +103,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       
       if (hasExpensesAccess) {
         userTabs.push({ id: 'expenses', label: 'Dépenses', icon: Receipt, path: '/expenses' });
+        userTabs.push({ id: 'expense-history', label: 'Historique Dépenses', icon: History, path: '/expenses/history' });
         
         userTabs.push({ id: 'articles', label: 'Articles', icon: Package, path: '/articles' });
         userTabs.push({ id: 'units', label: 'Unités', icon: Ruler, path: '/units' });

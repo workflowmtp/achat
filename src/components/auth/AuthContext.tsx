@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth';
+import { User, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -34,20 +34,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [accessHistory, setAccessHistory] = useState(false);
 
   useEffect(() => {
-    // Configurer la persistance de session
-    setPersistence(auth, browserLocalPersistence)
-      .then(() => {
-        console.log('Persistance de session configurée avec succès');
-      })
-      .catch((error) => {
-        console.error('Erreur lors de la configuration de la persistance:', error);
-      });
+    // La persistance est déjà configurée dans firebase.ts
 
     // Observer les changements d'état d'authentification
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      console.log('Auth state changed:', currentUser ? 'user logged in' : 'user logged out');
       setUser(currentUser);
       
       if (currentUser) {
+        // Stocker l'ID de l'utilisateur dans le localStorage pour vérifier la persistance
+        localStorage.setItem('currentUserId', currentUser.uid);
         // Récupérer les informations de l'utilisateur depuis localStorage
         const storedUserRole = localStorage.getItem('userRole') || '';
         const storedIsAdmin = localStorage.getItem('isAdmin') === 'true';
@@ -95,12 +91,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.error('Erreur lors de la récupération des données utilisateur:', error);
         }
       } else {
-        // Réinitialiser les états si l'utilisateur est déconnecté
-        setUserRole('');
-        setIsAdmin(false);
-        setAccessEntries(false);
-        setAccessExpenses(false);
-        setAccessHistory(false);
+        // Vérifier si nous avons un ID utilisateur dans le localStorage
+        const storedUserId = localStorage.getItem('currentUserId');
+        
+        if (storedUserId) {
+          console.log('Session perdue mais ID utilisateur trouvé dans localStorage, tentative de restauration...');
+          // Ne pas effacer les données de rôle pour permettre la restauration de session
+        } else {
+          // Réinitialiser les états si l'utilisateur est déconnecté
+          setUserRole('');
+          setIsAdmin(false);
+          localStorage.removeItem('userRole');
+          localStorage.removeItem('isAdmin');
+          localStorage.removeItem('accessEntries');
+          localStorage.removeItem('accessExpenses');
+          localStorage.removeItem('accessHistory');
+          setAccessEntries(false);
+          setAccessExpenses(false);
+          setAccessHistory(false);
+        }
       }
       
       setLoading(false);
