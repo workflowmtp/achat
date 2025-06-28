@@ -1,11 +1,46 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { format, isValid, parseISO } from 'date-fns';
-import { Info, X, FileDown, Search, Save, Download } from 'lucide-react';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
-import { collection, getDocs, query, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, query, updateDoc, doc, where, getDoc } from 'firebase/firestore';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
+import { useState, useEffect, useCallback } from 'react';
 import { db } from '../firebase';
-import { useAuth } from './auth/AuthContext';
+import { useAuth } from '../components/auth/AuthContext';
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
+import { Check, Download, FileDown, Info, Search, X, Save } from 'lucide-react';
+
+// Extension de jsPDF pour autoTable
+declare module 'jspdf' {
+  interface jsPDF {
+    autoTable: (options: any) => jsPDF;
+    lastAutoTable: {
+      finalY: number;
+    };
+  }
+}
+
+// Fonctions utilitaires
+const formatDate = (date: string | Date | undefined) => {
+  if (!date) return '';
+  const dateObj = typeof date === 'string' ? new Date(date) : date;
+  return format(dateObj, 'dd/MM/yyyy', { locale: fr });
+};
+
+const formatPrice = (price: number): string => {
+  return new Intl.NumberFormat('fr-FR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(price) + ' FCFA';
+};
+
+const formatExpenseId = (id: string | undefined): string => {
+  if (!id) return '-';
+  return id.substring(0, 6).toUpperCase();
+};
+
+const calculateTotal = (items: ExpenseItem[]) => {
+  if (!items || !Array.isArray(items)) return 0;
+  return items.reduce((sum, item) => sum + (item.quantity * item.unitPrice || 0), 0);
+};
 
 interface Project {
   id: string;
@@ -22,53 +57,60 @@ interface ExpenseItem {
   unit: string;
   unitPrice: number;
   supplier: string;
+  supplierId?: string;
   amountGiven: number;
   beneficiary?: string;
   expenseId: string;
 }
 
 interface Expense {
-  id: string;  // Cet ID sera utilisé comme référence unique de la dépense
+  id: string;
   date: string;
   description: string;
   projectId: string;
   items: ExpenseItem[];
   userId: string;
   createdAt?: string;
+  reference?: string;
+  status?: string;
 }
 
-export default function ExpenseHistory() {
+function ExpenseHistory() {
+  const { user } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [userNames, setUserNames] = useState<{[key: string]: string}>({});
-  const [selectedProject, setSelectedProject] = useState<string>('');
+  const [userNames, setUserNames] = useState<Record<string, string>>({});
+  
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [editingItems, setEditingItems] = useState<{ [key: string]: string }>({});
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
-  const [error, setError] = useState<string>('');
-  const [success, setSuccess] = useState<string>('');
-  const { user } = useAuth();
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [editingItems, setEditingItems] = useState<Record<string, string>>({});
+  
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedProject, setSelectedProject] = useState<string>('');
 
   // Fonction pour exporter les dépenses en CSV
   const exportToCSV = async () => {
     try {
-      // Définir les en-têtes CSV
-      const headers = ['Date', 'Description', 'Projet', 'Utilisateur', 'Articles', 'Total'];
+      const headers = ['Date', 'Référence', 'Description', 'Projet', 'Utilisateur', 'Articles', 'Total'];
       
-      // Transformer les données pour le CSV
       const csvData = expenses.map(expense => {
         const projectName = projects.find(p => p.id === expense.projectId)?.name || 'Non spécifié';
-        const userName = getUserName(expense.userId);
+        const userName = userNames[expense.userId] || 'Utilisateur inconnu';
         const itemsText = expense.items.map(item => 
-          `${item.designation} (${item.quantity} ${item.unit} à ${item.unitPrice}€)`
+          `${item.designation} (${item.quantity} ${item.unit} à ${item.unitPrice} FCFA)`
         ).join('; ');
-        const total = expense.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0).toFixed(2);
+        const total = calculateTotal(expense.items);
         
         return [
-          expense.date,
-          expense.description,
+          formatDate(expense.date),
+          expense.reference || formatExpenseId(expense.id),
+          expense.description || '-',
           projectName,
           userName,
           itemsText,
@@ -76,12 +118,10 @@ export default function ExpenseHistory() {
         ];
       });
       
-      // Combiner les en-têtes et les données
       const csvContent = [
         headers.join(','),
         ...csvData.map(row => 
           row.map(cell => 
-            // Échapper les virgules et les guillemets dans les cellules
             typeof cell === 'string' && (cell.includes(',') || cell.includes('"')) 
               ? `"${cell.replace(/"/g, '""')}"` 
               : cell
@@ -89,55 +129,46 @@ export default function ExpenseHistory() {
         )
       ].join('\n');
       
-      // Créer un objet Blob avec le contenu CSV
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      
-      // Créer un lien de téléchargement
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       
-      // Configurer le lien
       link.setAttribute('href', url);
       link.setAttribute('download', `depenses_${format(new Date(), 'yyyy-MM-dd_HH-mm-ss')}.csv`);
       link.style.visibility = 'hidden';
       
-      // Ajouter le lien au DOM, cliquer dessus, puis le supprimer
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       
       setSuccess('Exportation CSV réussie !');
+      setTimeout(() => setSuccess(null), 3000);
     } catch (error) {
       console.error('Erreur lors de l\'exportation:', error);
       setError('Erreur lors de l\'exportation des données');
+      setTimeout(() => setError(null), 3000);
     }
   };
 
   // Fonction pour récupérer le nom d'un utilisateur depuis Firebase
   const fetchUserName = useCallback(async (userId: string) => {
     try {
-      // Vérifier si nous avons déjà le nom de cet utilisateur
       if (userNames[userId]) {
         return;
       }
 
-      // Récupérer les informations de l'utilisateur depuis Firebase
       const userDoc = doc(db, 'users', userId);
       const userSnapshot = await getDoc(userDoc);
       
       if (userSnapshot.exists()) {
         const userData = userSnapshot.data();
-        // Utiliser le displayName, le nom ou l'email comme nom d'utilisateur
         const name = userData.displayName || userData.name || userData.email || userId;
         
-        // Mettre à jour l'état avec le nouveau nom d'utilisateur
         setUserNames(prev => ({
           ...prev,
           [userId]: name
         }));
       } else {
-        // Si l'utilisateur n'existe pas dans la collection 'users', utiliser l'ID comme nom
-        // Si c'est un email, extraire le nom d'utilisateur
         let name = userId;
         if (userId.includes('@')) {
           const username = userId.split('@')[0];
@@ -147,7 +178,6 @@ export default function ExpenseHistory() {
             .join(' ');
         }
         
-        // Mettre à jour l'état avec le nouveau nom d'utilisateur
         setUserNames(prev => ({
           ...prev,
           [userId]: name
@@ -155,7 +185,6 @@ export default function ExpenseHistory() {
       }
     } catch (error) {
       console.error('Erreur lors de la récupération du nom d\'utilisateur:', error);
-      // En cas d'erreur, utiliser l'ID comme nom
       setUserNames(prev => ({
         ...prev,
         [userId]: userId
@@ -163,20 +192,99 @@ export default function ExpenseHistory() {
     }
   }, [userNames]);
 
+  // Fonction pour récupérer les dépenses
+  const fetchExpenses = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      setError('');
+      const expensesRef = collection(db, 'expenses');
+      const snapshot = await getDocs(expensesRef);
+      
+      const expensesPromises = snapshot.docs.map(async (doc) => {
+        const expenseData = doc.data();
+        const itemsRef = collection(db, 'expense_items');
+        const itemsQuery = query(itemsRef, where('expenseId', '==', doc.id));
+        const itemsSnapshot = await getDocs(itemsQuery);
+        
+        const items = itemsSnapshot.docs.map(itemDoc => ({
+          id: itemDoc.id,
+          ...itemDoc.data(),
+          amountGiven: itemDoc.data().amountGiven || 0
+        })) as ExpenseItem[];
+        
+        return {
+          id: doc.id,
+          ...expenseData,
+          items,
+          date: expenseData.date || new Date().toISOString(),
+          status: expenseData.status || 'pending'
+        } as Expense;
+      });
+      
+      const expensesWithItems = await Promise.all(expensesPromises);
+      setExpenses(expensesWithItems);
+      
+      // Initialiser editingItems avec les montants actuels
+      const initialEditingItems: Record<string, string> = {};
+      expensesWithItems.forEach(expense => {
+        expense.items.forEach(item => {
+          initialEditingItems[item.id] = item.amountGiven.toString();
+        });
+      });
+      setEditingItems(initialEditingItems);
+    } catch (error) {
+      console.error('Erreur lors de la récupération des dépenses:', error);
+      setError('Erreur lors de la récupération des dépenses');
+    }
+  }, [user]);
+
+  // Fonction pour récupérer les projets
+  const fetchProjects = useCallback(async () => {
+    try {
+      const projectsRef = collection(db, 'projects');
+      const snapshot = await getDocs(projectsRef);
+      const projectsList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Project[];
+      setProjects(projectsList);
+    } catch (error) {
+      console.error('Erreur lors de la récupération des projets:', error);
+      setError('Erreur lors de la récupération des projets');
+    }
+  }, []);
+
+  // Fonction pour récupérer les utilisateurs
+  const fetchUsers = useCallback(async () => {
+    try {
+      const usersRef = collection(db, 'users');
+      const snapshot = await getDocs(usersRef);
+      const usersList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().name || doc.data().displayName || doc.data().email || doc.id,
+        email: doc.data().email
+      }));
+      const usersMap = usersList.reduce((acc, user) => ({ ...acc, [user.id]: user.name }), {} as Record<string, string>);
+      setUserNames(usersMap);
+    } catch (error) {
+      console.error('Erreur lors de la récupération des utilisateurs:', error);
+      setUserNames({});
+    }
+  }, []);
+
   useEffect(() => {
     if (user) {
       fetchExpenses();
       fetchProjects();
+      fetchUsers();
     }
-  }, [user]);
+  }, [user, fetchExpenses, fetchProjects, fetchUsers]);
 
   useEffect(() => {
-    // Lorsque les dépenses sont chargées, récupérer les noms d'utilisateurs
     if (expenses.length > 0) {
-      // Récupérer tous les IDs d'utilisateurs uniques
       const userIds = [...new Set(expenses.map(expense => expense.userId))].filter(Boolean);
       
-      // Récupérer les noms d'utilisateurs pour chaque ID
       userIds.forEach(userId => {
         if (userId && !userNames[userId]) {
           fetchUserName(userId);
@@ -185,279 +293,106 @@ export default function ExpenseHistory() {
     }
   }, [expenses, userNames, fetchUserName]);
 
-  const fetchExpenses = async () => {
-    if (!user) return;
-    
-    try {
-      // Récupérer toutes les dépenses, sans filtrer par utilisateur
-      const expensesRef = collection(db, 'expenses');
-      // Créer une requête ordonnée par date (du plus récent au moins récent)
-      const expensesQuery = query(expensesRef);
-      const expensesSnapshot = await getDocs(expensesQuery);
-      const expensesList = expensesSnapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id,  // L'ID du document est utilisé comme référence unique
-        items: [] as ExpenseItem[]
-      })) as Expense[];
-
-      // Trier les dépenses par date (du plus récent au moins récent)
-      expensesList.sort((a, b) => {
-        // D'abord essayer de comparer par la date stockée
-        const dateComparison = new Date(b.date).getTime() - new Date(a.date).getTime();
-        if (dateComparison !== 0) return dateComparison;
-        
-        // Si dates identiques, utiliser createdAt comme critère secondaire
-        if (a.createdAt && b.createdAt) {
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        }
-        
-        return 0;
-      });
-
-      // Récupérer tous les items de dépenses
-      const itemsRef = collection(db, 'expense_items');
-      const itemsSnapshot = await getDocs(itemsRef);
-      const allItems = itemsSnapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
-      })) as ExpenseItem[];
-
-      // Associer les items à leurs dépenses respectives
-      expensesList.forEach(expense => {
-        expense.items = allItems.filter(item => item.expenseId === expense.id);
-      });
-
-      // Définir toutes les dépenses (pour tous les utilisateurs)
-      setExpenses(expensesList);
-      
-    } catch (error) {
-      console.error('Erreur lors de la récupération des dépenses:', error);
-      setError('Erreur lors de la récupération des dépenses');
-    }
-  };
-
-  const fetchProjects = async () => {
-    try {
-      const projectsRef = collection(db, 'projects');
-      const snapshot = await getDocs(projectsRef);
-      const projectsList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        name: doc.data().name,
-        description: doc.data().description || ''
-      }));
-      setProjects(projectsList);
-    } catch (error) {
-      console.error('Erreur lors de la récupération des projets:', error);
-      // En cas d'erreur, définir une liste vide pour éviter les problèmes d'affichage
-      setProjects([]);
-    }
-  };
-
-  // Fonction pour obtenir le nom d'utilisateur à partir de son ID
   const getUserName = (userId: string | undefined) => {
     if (!userId) return '-';
-    
-    // Si nous avons déjà récupéré le nom de cet utilisateur, l'utiliser
-    if (userNames[userId]) {
-      return userNames[userId];
+    return userNames[userId] || userId.substring(0, 8);
+  };
+
+  const getStatusLabel = (expense: Expense) => {
+    if (!expense.status || expense.status === 'pending') {
+      return (
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+          En attente
+        </span>
+      );
+    } else if (expense.status === 'danger') {
+      return (
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+          Dette
+        </span>
+      );
+    } else if (expense.status === 'validated') {
+      return (
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+          Validé
+        </span>
+      );
     }
-    
-    // Si nous n'avons pas encore le nom, lancer la récupération en arrière-plan
-    // et retourner une valeur temporaire
-    fetchUserName(userId);
-    
-    // Retourner une valeur temporaire pendant le chargement
-    if (userId.includes('@')) {
-      const username = userId.split('@')[0];
-      return username
-        .split('.')
-        .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-        .join(' ');
+    return null;
+  };
+
+  const handleValidateExpense = async (expense: Expense) => {
+    try {
+      setError('');
+      setSuccess('');
+      
+      const expenseRef = doc(db, 'expenses', expense.id);
+      await updateDoc(expenseRef, {
+        status: 'validated'
+      });
+      
+      setExpenses(prevExpenses => 
+        prevExpenses.map(exp => 
+          exp.id === expense.id ? { ...exp, status: 'validated' } : exp
+        )
+      );
+      
+      setSuccess(`La dépense ${expense.reference || formatExpenseId(expense.id)} a été validée avec succès.`);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error) {
+      console.error('Erreur lors de la validation de la dépense:', error);
+      setError('Erreur lors de la validation de la dépense');
+      setTimeout(() => setError(null), 3000);
     }
-    
-    return userId;
   };
 
   const handleShowDetails = (expense: Expense) => {
     setSelectedExpense(expense);
-    // Initialiser l'état d'édition pour tous les items
-    const initialEditingState: { [key: string]: string } = {};
-    expense.items.forEach(item => {
-      initialEditingState[item.id] = item.amountGiven.toString();
-    });
-    setEditingItems(initialEditingState);
     setShowModal(true);
-    setError('');
-    setSuccess('');
   };
 
-  const handleAmountChange = (itemId: string, value: string) => {
-    setEditingItems(prev => ({
-      ...prev,
-      [itemId]: value
-    }));
-  };
-
-  const handleUpdateAmount = async (item: ExpenseItem) => {
-    if (!user) return;
-
-    const newAmount = parseFloat(editingItems[item.id]);
-    if (isNaN(newAmount) || newAmount < 0) {
-      setError('Le montant doit être un nombre positif');
-      return;
-    }
-
-    try {
-      setSavingItemId(item.id);
-      const itemRef = doc(db, 'expense_items', item.id);
-      await updateDoc(itemRef, {
-        amountGiven: newAmount,
-        updatedAt: new Date().toISOString()
-      });
-
-      // Mettre à jour l'état local
-      setExpenses(prevExpenses => 
-        prevExpenses.map(expense => ({
-          ...expense,
-          items: expense.items.map(expenseItem => 
-            expenseItem.id === item.id
-              ? { ...expenseItem, amountGiven: newAmount }
-              : expenseItem
-          )
-        }))
-      );
-
-      if (selectedExpense) {
-        setSelectedExpense({
-          ...selectedExpense,
-          items: selectedExpense.items.map(expenseItem =>
-            expenseItem.id === item.id
-              ? { ...expenseItem, amountGiven: newAmount }
-              : expenseItem
-          )
-        });
-      }
-
-      setSuccess('Montant mis à jour avec succès');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (error) {
-      console.error('Erreur lors de la mise à jour du montant:', error);
-      setError('Erreur lors de la mise à jour du montant');
-    } finally {
-      setSavingItemId(null);
-    }
-  };
-
-  const calculateTotal = (items: ExpenseItem[]) => {
-    return items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-  };
-
-  const calculateTotalRemainingDebt = (expense: Expense) => {
-    return expense.items.reduce((sum, item) => {
-      const total = item.quantity * item.unitPrice;
-      return sum + (item.amountGiven - total);
-    }, 0);
-  };
-
-  const formatPrice = (amount: number | undefined) => {
-    if (amount === undefined || amount === null) {
-      return '0 FCFA';
-    }
-    return amount.toLocaleString('fr-FR', { 
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }) + ' FCFA';
-  };
-
-  const formatDate = (dateString: string | undefined | null) => {
-    if (!dateString) {
-      return format(new Date(), 'dd/MM/yyyy');
-    }
-    try {
-      const date = parseISO(dateString);
-      if (!isValid(date)) {
-        return format(new Date(), 'dd/MM/yyyy');
-      }
-      return format(date, 'dd/MM/yyyy');
-    } catch (error) {
-      console.error('Error formatting date:', error);
-      return format(new Date(), 'dd/MM/yyyy');
-    }
-  };
-
-  const handleExportPDF = () => {
+  const generateExpensesReportPDF = () => {
     const doc = new jsPDF();
-    
-    doc.setFontSize(20);
-    doc.text('Rapport des Dépenses', 14, 20);
-    
-    doc.setFontSize(10);
-    doc.text(`Généré le ${format(new Date(), 'dd/MM/yyyy')}`, 14, 30);
-    if (selectedProject) {
-      const project = projects.find(p => p.id === selectedProject);
-      if (project) {
-        doc.text(`Projet: ${project.name}`, 14, 35);
-      }
-    }
-
     const filteredExpenses = getFilteredExpenses();
-
-    let currentY = selectedProject ? 40 : 35;
-
-    filteredExpenses.forEach((expense, index) => {
-      currentY += 10;
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      // Utiliser une vérification explicite pour expense.date
-      const expenseDate = expense.date || '';
-      doc.text(`Dépense du ${formatDate(expenseDate)} - Réf: ${formatExpenseId(expense.id)}`, 14, currentY);
+    
+    doc.setFontSize(18);
+    doc.text('Rapport des dépenses', 14, 22);
+    doc.setFontSize(11);
+    doc.text(`Date: ${format(new Date(), 'dd/MM/yyyy')}`, 14, 30);
+    
+    const tableColumn = ['Référence', 'Date', 'Description', 'Projet', 'Utilisateur', 'Total', 'Statut'];
+    const tableRows: string[][] = [];
+    
+    filteredExpenses.forEach((expense: Expense) => {
+      const projectName = projects.find((p: Project) => p.id === expense.projectId)?.name || '-';
+      const userName = getUserName(expense.userId);
+      const total = calculateTotal(expense.items);
+      const statusText = expense.status === 'validated' ? 'Validé' : 
+                        expense.status === 'danger' ? 'Dette' : 'En attente';
       
-      currentY += 6;
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`Description: ${expense.description}`, 14, currentY);
-      currentY += 5;
-      doc.text(`Projet: ${projects.find(p => p.id === expense.projectId)?.name || '-'}`, 14, currentY);
-      
-      currentY += 10;
-      (doc as any).autoTable({
-        startY: currentY,
-        head: [['Référence', 'Article', 'Quantité', 'Prix unitaire', 'Total', 'Montant remis', 'Reste à payer', 'Bénéficiaire', 'Fournisseur']],
-        body: expense.items.map(item => [
-          item.reference,
-          item.designation,
-          `${item.quantity} ${item.unit}`,
-          formatPrice(item.unitPrice),
-          formatPrice(item.quantity * item.unitPrice),
-          formatPrice(item.amountGiven),
-          formatPrice(item.amountGiven - (item.quantity * item.unitPrice)),
-          item.beneficiary || '-',
-          item.supplier
-        ]),
-        theme: 'striped',
-        headStyles: { fillColor: [59, 130, 246] },
-        margin: { left: 14 },
-        tableWidth: 180
-      });
-
-      currentY = (doc as any).lastAutoTable.finalY + 5;
-      const expenseTotal = calculateTotal(expense.items);
-      doc.text(
-        `Total de la dépense: ${formatPrice(expenseTotal)}`,
-        14,
-        currentY
-      );
-
-      currentY += 10;
-
-      if (currentY > 270 && index < filteredExpenses.length - 1) {
-        doc.addPage();
-        currentY = 20;
-      }
+      tableRows.push([
+        expense.reference || formatExpenseId(expense.id),
+        formatDate(expense.date),
+        expense.description || '-',
+        projectName,
+        userName,
+        formatPrice(total),
+        statusText
+      ]);
     });
-
-    const totalAmount = filteredExpenses.reduce((sum, expense) => sum + calculateTotal(expense.items), 0);
-    doc.setFont(undefined, 'bold');
+    
+    doc.autoTable({
+      head: [tableColumn],
+      body: tableRows,
+      startY: 40,
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [41, 128, 185], textColor: 255 }
+    });
+    
+    const currentY = doc.lastAutoTable.finalY || 150;
+    const totalAmount = filteredExpenses.reduce((sum: number, expense: Expense) => sum + calculateTotal(expense.items), 0);
+    doc.setFont('helvetica', 'bold');
     doc.text(
       `Total général: ${formatPrice(totalAmount)}`,
       14,
@@ -466,89 +401,183 @@ export default function ExpenseHistory() {
 
     doc.save('rapport-depenses.pdf');
   };
-
-  const getProjectLabel = (project: Project) => {
-    if (project.description) {
-      return `${project.name} (${project.description})`;
+  
+  const handleExportPDF = () => {
+    try {
+      generateExpensesReportPDF();
+      setSuccess('Le rapport des dépenses a été généré avec succès.');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error) {
+      console.error('Erreur lors de la génération du PDF:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
+      setError(`Erreur lors de la génération du PDF: ${errorMessage}`);
+      setTimeout(() => setError(null), 3000);
     }
-    return project.name;
   };
-
-  // Formatage de l'ID pour l'afficher comme référence
-  const formatExpenseId = (id: string | undefined) => {
-    // Prendre les premiers 8 caractères de l'ID comme référence
-    if (!id) return 'N/A';
-    return id.substring(0, 8).toUpperCase();
+  
+  const handleAmountChange = (itemId: string, value: string) => {
+    setEditingItems(prev => ({
+      ...prev,
+      [itemId]: value
+    }));
   };
-
-  const getFilteredExpenses = () => {
-    // Vérifier que expenses existe et n'est pas vide
-    if (!expenses || expenses.length === 0) {
-      return [];
+  
+  const handleUpdateAmount = async (item: ExpenseItem) => {
+    const newAmount = parseFloat(editingItems[item.id] || '0');
+    if (isNaN(newAmount) || newAmount < 0) {
+      setError("Le montant doit être un nombre positif");
+      setTimeout(() => setError(null), 3000);
+      return;
     }
+
+    setSavingItemId(item.id);
     
-    return expenses.filter(expense => {
-      // Vérifier que expense existe
-      if (!expense) return false;
+    try {
+      const itemRef = doc(db, 'expense_items', item.id);
+      await updateDoc(itemRef, { amountGiven: newAmount });
       
-      // Vérification du projet sélectionné
-      const matchesProject = !selectedProject || expense.projectId === selectedProject;
-      
-      if (!searchTerm) {
-        // Si aucun terme de recherche, seulement filtrer par projet
-        return matchesProject;
-      }
-      
-      const searchTermLower = searchTerm.toLowerCase();
-      
-      // Vérification du terme de recherche dans la description de la dépense
-      const expenseDescriptionMatch = expense.description ? expense.description.toLowerCase().includes(searchTermLower) : false;
-      
-      // Vérification du terme de recherche dans l'ID (référence) de la dépense
-      const expenseIdMatch = expense.id ? expense.id.toLowerCase().includes(searchTermLower) : false;
-      
-      // Vérification du terme de recherche dans les articles (désignation ou référence)
-      const itemsMatch = expense.items.some(item => {
-        const designationMatch = item.designation ? item.designation.toLowerCase().includes(searchTermLower) : false;
-        const referenceMatch = item.reference ? item.reference.toLowerCase().includes(searchTermLower) : false;
-        const supplierMatch = item.supplier ? item.supplier.toLowerCase().includes(searchTermLower) : false;
-        const beneficiaryMatch = item.beneficiary ? item.beneficiary.toLowerCase().includes(searchTermLower) : false;
-        
-        return designationMatch || referenceMatch || supplierMatch || beneficiaryMatch;
+      setExpenses(prevExpenses => {
+        return prevExpenses.map(exp => {
+          if (exp.id === item.expenseId) {
+            return {
+              ...exp,
+              items: exp.items.map(i => i.id === item.id ? { ...i, amountGiven: newAmount } : i)
+            };
+          }
+          return exp;
+        });
       });
       
-      // Vérification du terme de recherche dans la date (format dd/MM/yyyy)
-      const formattedDate = formatDate(expense.date);
-      const dateMatch = formattedDate.includes(searchTerm);
-      
-      // Vérification du terme de recherche dans le nom du projet
-      const project = projects.find(p => p.id === expense.projectId);
-      const projectMatch = project ? 
-        project.name.toLowerCase().includes(searchTermLower) || 
-        (project.description || '').toLowerCase().includes(searchTermLower) 
-        : false;
-      
-      // Vérification du terme de recherche dans l'ID de l'utilisateur
-      const userMatch = expense.userId ? expense.userId.toLowerCase().includes(searchTermLower) : false;
-      
-      return matchesProject && (
-        expenseDescriptionMatch || 
-        expenseIdMatch ||
-        itemsMatch || 
-        dateMatch || 
-        projectMatch ||
-        userMatch
-      );
+      setSuccess("Montant mis à jour avec succès");
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
+      setError(`Erreur lors de la mise à jour: ${errorMessage}`);
+      setTimeout(() => setError(null), 3000);
+    } finally {
+      setSavingItemId(null);
+    }
+  };
+
+  const getProjectLabel = (project: Project) => {
+    if (!project) return '-';
+    return project.name || project.id.substring(0, 8);
+  };
+
+  const sortExpensesByDate = (expenses: Expense[], order: 'asc' | 'desc') => {
+    return [...expenses].sort((a: Expense, b: Expense) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return order === 'desc' ? dateB - dateA : dateA - dateB;
     });
   };
 
+  const getFilteredExpenses = () => {
+    let filteredByProject = expenses;
+    
+    if (searchTerm && searchTerm.trim() !== '') {
+      const lowerSearchTerm = searchTerm.toLowerCase();
+      filteredByProject = filteredByProject.filter((expense: Expense) => {
+        const project = projects.find((p: Project) => p.id === expense.projectId);
+        const matchesDescription = expense.description?.toLowerCase().includes(lowerSearchTerm);
+        const matchesReference = expense.reference?.toLowerCase().includes(lowerSearchTerm);
+        const matchesProject = project && getProjectLabel(project).toLowerCase().includes(lowerSearchTerm);
+        const matchesId = expense.id.toLowerCase().includes(lowerSearchTerm);
+        const matchesUser = getUserName(expense.userId).toLowerCase().includes(lowerSearchTerm);
+        const matchesItems = expense.items.some(item => 
+          item.designation?.toLowerCase().includes(lowerSearchTerm) || 
+          item.supplier?.toLowerCase().includes(lowerSearchTerm) ||
+          item.beneficiary?.toLowerCase().includes(lowerSearchTerm)
+        );
+        
+        return matchesDescription || matchesReference || matchesProject || matchesId || matchesUser || matchesItems;
+      });
+    }
+    
+    if (selectedProject) {
+      filteredByProject = filteredByProject.filter((expense: Expense) => expense.projectId === selectedProject);
+    }
+    
+    return sortExpensesByDate(filteredByProject, sortOrder);
+  };
+
   const filteredExpenses = getFilteredExpenses();
+  
+  const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
+  
+  const renderPagination = () => {
+    const totalPages = Math.ceil(filteredExpenses.length / itemsPerPage);
+    const pageNumbers = [];
+    
+    let startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, startPage + 4);
+    
+    if (endPage - startPage < 4) {
+      startPage = Math.max(1, endPage - 4);
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+      pageNumbers.push(i);
+    }
+    
+    return (
+      <div className="flex justify-center mt-4">
+        <nav className="inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+          <button
+            onClick={() => paginate(1)}
+            disabled={currentPage === 1}
+            className={`relative inline-flex items-center px-2 py-2 rounded-l-md border ${currentPage === 1 ? 'bg-gray-100 text-gray-400' : 'bg-white text-gray-500 hover:bg-gray-50'} text-sm font-medium`}
+          >
+            «
+          </button>
+          <button
+            onClick={() => paginate(currentPage - 1)}
+            disabled={currentPage === 1}
+            className={`relative inline-flex items-center px-2 py-2 border ${currentPage === 1 ? 'bg-gray-100 text-gray-400' : 'bg-white text-gray-500 hover:bg-gray-50'} text-sm font-medium`}
+          >
+            ‹
+          </button>
+          {pageNumbers.map((number: number) => (
+            <button
+              key={number}
+              onClick={() => paginate(number)}
+              className={`relative inline-flex items-center px-4 py-2 border ${currentPage === number ? 'bg-blue-50 text-blue-600 border-blue-500' : 'bg-white text-gray-700 hover:bg-gray-50'} text-sm font-medium`}
+            >
+              {number}
+            </button>
+          ))}
+          <button
+            onClick={() => paginate(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className={`relative inline-flex items-center px-2 py-2 border ${currentPage === totalPages ? 'bg-gray-100 text-gray-400' : 'bg-white text-gray-500 hover:bg-gray-50'} text-sm font-medium`}
+          >
+            ›
+          </button>
+          <button
+            onClick={() => paginate(totalPages)}
+            disabled={currentPage === totalPages}
+            className={`relative inline-flex items-center px-2 py-2 rounded-r-md border ${
+              currentPage === totalPages
+                ? 'bg-gray-100 text-gray-400'
+                : 'bg-white text-gray-500 hover:bg-gray-50'
+            } text-sm font-medium`}
+          >
+            »
+          </button>
+        </nav>
+      </div>
+    );
+  };
+
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentExpenses = filteredExpenses.slice(indexOfFirstItem, indexOfLastItem);
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-4">
+    <div className="container mx-auto px-4 py-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <h2 className="text-2xl font-bold">Historique des dépenses</h2>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={exportToCSV}
             className="flex items-center gap-1 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
@@ -558,7 +587,7 @@ export default function ExpenseHistory() {
           </button>
           <button
             onClick={handleExportPDF}
-            className="inline-flex items-center px-4 py-3 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
             <FileDown className="w-4 h-4 mr-2" />
             Exporter en PDF
@@ -566,74 +595,168 @@ export default function ExpenseHistory() {
         </div>
       </div>
 
-      <div className="mb-6">
-        <div className="relative">
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Rechercher par référence, description, désignation, fournisseur, bénéficiaire ou utilisateur..."
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          />
-          <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+      {error && (
+        <div className="mb-4 bg-red-50 border-l-4 border-red-400 p-4 rounded-r" role="alert">
+          <span className="text-red-700">{error}</span>
+        </div>
+      )}
+
+      {success && (
+        <div className="mb-4 bg-green-50 border-l-4 border-green-400 p-4 rounded-r" role="alert">
+          <span className="text-green-700">{success}</span>
+        </div>
+      )}
+
+      <div className="bg-white shadow-md rounded-lg p-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="col-span-1 md:col-span-2">
+            <div className="relative">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Rechercher par référence, description, désignation, fournisseur, bénéficiaire ou utilisateur..."
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+            </div>
+          </div>
+          <div>
+            <select
+              value={selectedProject}
+              onChange={(e) => setSelectedProject(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2"
+            >
+              <option value="">Tous les projets</option>
+              {projects.map(project => (
+                <option key={project.id} value={project.id}>{project.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        
+        <div className="flex flex-col sm:flex-row justify-between items-center">
+          <div className="flex items-center mb-4 sm:mb-0">
+            <label className="mr-2 text-sm text-gray-600">Trier par date:</label>
+            <button
+              onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+              className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              {sortOrder === 'desc' ? 'Plus récent d\'abord' : 'Plus ancien d\'abord'}
+              <span className="ml-1">{sortOrder === 'desc' ? '↓' : '↑'}</span>
+            </button>
+          </div>
+          
+          <div className="flex items-center">
+            <label className="mr-2 text-sm text-gray-600">Afficher:</label>
+            <select
+              value={itemsPerPage}
+              onChange={(e) => {
+                const newItemsPerPage = Number(e.target.value);
+                setItemsPerPage(newItemsPerPage);
+                setCurrentPage(1);
+              }}
+              className="border border-gray-300 rounded-md px-2 py-1 text-sm"
+            >
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+            </select>
+            <span className="ml-2 text-sm text-gray-600">par page</span>
+          </div>
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-blue-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Référence</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Projet</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Détails</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {filteredExpenses.map((expense) => {
-              const totalRemainingDebt = calculateTotalRemainingDebt(expense);
-              const project = projects.find(p => p.id === expense.projectId);
-              return (
-                <tr key={expense.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatDate(expense.date)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{expense.description}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
-                    {formatExpenseId(expense.id)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {project ? getProjectLabel(project) : '-'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                    {formatPrice(calculateTotal(expense.items))}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
-                    <button
-                      onClick={() => handleShowDetails(expense)}
-                      className={`inline-flex items-center justify-center p-2 rounded-full ${
-                        totalRemainingDebt !== 0 
-                          ? 'text-red-600 bg-red-100 hover:bg-red-200' 
-                          : 'text-blue-600 bg-blue-100 hover:bg-blue-200'
-                      }`}
-                    >
-                      <Info className="w-4 h-4" />
-                    </button>
+      <div className="bg-white shadow-md rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-blue-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}>
+                  Date {sortOrder === 'desc' ? '↓' : '↑'}
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Référence</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Projet</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {currentExpenses.map((expense: Expense) => {
+                const totalRemainingDebt = expense.items.reduce((sum, item) => {
+                  const total = item.quantity * item.unitPrice;
+                  return sum + (item.amountGiven - total);
+                }, 0);
+                const project = projects.find((p: Project) => p.id === expense.projectId);
+                return (
+                  <tr 
+                    key={expense.id} 
+                    className={`hover:bg-gray-50 ${expense.status === 'validated' ? 'bg-green-50' : totalRemainingDebt < 0 ? 'bg-red-50' : ''}`}
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {formatDate(expense.date)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{expense.description || '-'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
+                      {expense.reference || formatExpenseId(expense.id)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {project ? getProjectLabel(project) : '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                      {formatPrice(calculateTotal(expense.items))}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                      {getStatusLabel(expense)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                      <div className="flex items-center justify-center space-x-2">
+                        <button
+                          onClick={() => handleShowDetails(expense)}
+                          className="inline-flex items-center justify-center p-2 rounded-full text-blue-600 bg-blue-100 hover:bg-blue-200"
+                          title="Voir les détails"
+                        >
+                          <Info className="w-4 h-4" />
+                        </button>
+                        {expense.status !== 'validated' && (
+                          <button
+                            onClick={() => handleValidateExpense(expense)}
+                            className="inline-flex items-center justify-center p-2 rounded-full text-green-600 bg-green-100 hover:bg-green-200"
+                            title="Valider la dépense"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filteredExpenses.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-6 py-4 text-center text-sm text-gray-500">
+                    {searchTerm ? 'Aucune dépense ne correspond à votre recherche' : 'Aucune dépense n\'a été enregistrée'}
                   </td>
                 </tr>
-              );
-            })}
-            {filteredExpenses.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
-                  {searchTerm ? 'Aucune dépense ne correspond à votre recherche' : 'Aucune dépense n\'a été enregistrée'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </div>
+        
+        <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
+          <div className="flex flex-col sm:flex-row justify-between items-center">
+            <p className="text-sm text-gray-700 mb-4 sm:mb-0">
+              Affichage de <span className="font-medium">{filteredExpenses.length > 0 ? indexOfFirstItem + 1 : 0}</span> à{' '}
+              <span className="font-medium">{Math.min(indexOfLastItem, filteredExpenses.length)}</span> sur{' '}
+              <span className="font-medium">{filteredExpenses.length}</span> résultats
+            </p>
+            
+            {filteredExpenses.length > itemsPerPage && renderPagination()}
+          </div>
+        </div>
       </div>
 
       {showModal && selectedExpense && (
@@ -642,7 +765,7 @@ export default function ExpenseHistory() {
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-medium text-gray-900">
-                  Détails de la dépense du {formatDate(selectedExpense.date)} - Réf: {formatExpenseId(selectedExpense.id)}
+                  Détails de la dépense du {formatDate(selectedExpense.date)} - Réf: {selectedExpense.reference || formatExpenseId(selectedExpense.id)}
                 </h3>
                 <button
                   onClick={() => setShowModal(false)}
@@ -693,7 +816,7 @@ export default function ExpenseHistory() {
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Prix unitaire</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Montant remis</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Reste à payer</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Solde</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bénéficiaire</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
@@ -701,9 +824,10 @@ export default function ExpenseHistory() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {selectedExpense.items.map((item) => {
                     const total = item.quantity * item.unitPrice;
-                    const remainingDebt = parseFloat(editingItems[item.id]) - total;
+                    const currentAmount = parseFloat(editingItems[item.id] || item.amountGiven.toString());
+                    const remainingDebt = currentAmount - total;
                     return (
-                      <tr key={item.id} className={remainingDebt < 0 ? 'bg-red-50' : ''}>
+                      <tr key={item.id} className={remainingDebt < 0 ? 'bg-red-50' : remainingDebt > 0 ? 'bg-green-50' : ''}>
                         <td className="px-4 py-3 text-sm text-gray-900">
                           {item.designation} ({item.reference})
                         </td>
@@ -719,16 +843,19 @@ export default function ExpenseHistory() {
                         <td className="px-4 py-3 text-sm text-right">
                           <input
                             type="number"
-                            value={editingItems[item.id]}
+                            value={editingItems[item.id] || item.amountGiven}
                             onChange={(e) => handleAmountChange(item.id, e.target.value)}
                             className="w-32 px-2 py-1 text-right border rounded focus:ring-blue-500 focus:border-blue-500"
                             min="0"
+                            step="0.01"
                           />
                         </td>
                         <td className={`px-4 py-3 text-sm text-right font-medium ${
-                          remainingDebt < 0 ? 'text-red-600' : 'text-green-600'
+                          remainingDebt < 0 ? 'text-red-600' : remainingDebt > 0 ? 'text-green-600' : 'text-gray-900'
                         }`}>
-                          {formatPrice(remainingDebt)}
+                          {formatPrice(Math.abs(remainingDebt))}
+                          {remainingDebt > 0 && ' (à récupérer)'}
+                          {remainingDebt < 0 && ' (à payer)'}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900">
                           {item.beneficiary || '-'}
@@ -736,8 +863,8 @@ export default function ExpenseHistory() {
                         <td className="px-4 py-3 text-sm text-center">
                           <button
                             onClick={() => handleUpdateAmount(item)}
-                            disabled={savingItemId === item.id}
-                            className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-300"
+                            disabled={savingItemId === item.id || selectedExpense.status === 'validated'}
+                            className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-300 disabled:cursor-not-allowed"
                           >
                             <Save className="w-4 h-4 mr-1" />
                             {savingItemId === item.id ? 'Enregistrement...' : 'Enregistrer'}
@@ -746,19 +873,32 @@ export default function ExpenseHistory() {
                       </tr>
                     );
                   })}
-                  <tr className="bg-gray-50">
-                    <td colSpan={3} className="px-4 py-3 text-sm font-medium text-gray-900">Total</td>
-                    <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
+                  <tr className="bg-gray-50 font-medium">
+                    <td colSpan={3} className="px-4 py-3 text-sm text-gray-900 text-right">Total</td>
+                    <td className="px-4 py-3 text-sm text-right text-gray-900">
                       {formatPrice(calculateTotal(selectedExpense.items))}
                     </td>
-                    <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
-                      {formatPrice(selectedExpense.items.reduce((sum, item) => sum + parseFloat(editingItems[item.id]), 0))}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right font-medium text-red-600">
+                    <td className="px-4 py-3 text-sm text-right text-gray-900">
                       {formatPrice(selectedExpense.items.reduce((sum, item) => {
-                        const total = item.quantity * item.unitPrice;
-                        return sum + (parseFloat(editingItems[item.id]) - total);
+                        const currentAmount = parseFloat(editingItems[item.id] || item.amountGiven.toString());
+                        return sum + currentAmount;
                       }, 0))}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right">
+                      {(() => {
+                        const totalDifference = selectedExpense.items.reduce((sum, item) => {
+                          const total = item.quantity * item.unitPrice;
+                          const currentAmount = parseFloat(editingItems[item.id] || item.amountGiven.toString());
+                          return sum + (currentAmount - total);
+                        }, 0);
+                        return (
+                          <span className={totalDifference > 0 ? 'text-green-600' : totalDifference < 0 ? 'text-red-600' : 'text-gray-900'}>
+                            {formatPrice(Math.abs(totalDifference))}
+                            {totalDifference > 0 && ' (à récupérer)'}
+                            {totalDifference < 0 && ' (à payer)'}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td colSpan={2}></td>
                   </tr>
@@ -771,3 +911,5 @@ export default function ExpenseHistory() {
     </div>
   );
 }
+
+export default ExpenseHistory;
