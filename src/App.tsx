@@ -9,7 +9,7 @@ import Register from './components/auth/Register';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import Projects from './components/Projects';
-import ProjectDetails from './components/ProjectDetails';
+
 import Categories from './components/Categories';
 import Articles from './components/Articles';
 import Units from './components/Units';
@@ -22,6 +22,7 @@ import ActivityHistory from './components/ActivityHistory';
 import Closing from './components/Closing';
 import Users from './components/Users';
 import PCAReimbursement from './components/PCAReimbursement';
+import ProjectDetail from './components/ProjectDetail';
 
 // Route pour les utilisateurs avec des accès spécifiques
 function RoleBasedRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles: string[] }) {
@@ -31,13 +32,21 @@ function RoleBasedRoute({ children, allowedRoles }: { children: React.ReactNode,
   const hasEntriesAccess = localStorage.getItem('accessEntries') === 'true';
   const hasExpensesAccess = localStorage.getItem('accessExpenses') === 'true';
   
-  // Ajouter des logs pour le débogage
-  console.log('RoleBasedRoute - userRole:', userRole);
-  console.log('RoleBasedRoute - isAdmin:', isAdmin);
-  console.log('RoleBasedRoute - hasEntriesAccess:', hasEntriesAccess);
-  console.log('RoleBasedRoute - hasExpensesAccess:', hasExpensesAccess);
-  console.log('RoleBasedRoute - allowedRoles:', allowedRoles);
-  console.log('RoleBasedRoute - path:', window.location.pathname);
+  const path = window.location.pathname;
+  
+  // Logs de débogage améliorés
+  console.log('RoleBasedRoute - Détail complet', {
+    path,
+    userRole,
+    isAdmin,
+    hasEntriesAccess,
+    hasExpensesAccess,
+    allowedRoles,
+    rawIsAdmin: localStorage.getItem('isAdmin'),
+    rawUserRole: localStorage.getItem('userRole'),
+    user: user ? 'Authentifié' : 'Non authentifié',
+    loading
+  });
   
   if (loading) {
     console.log('RoleBasedRoute - Chargement...');
@@ -49,8 +58,12 @@ function RoleBasedRoute({ children, allowedRoles }: { children: React.ReactNode,
     return <Navigate to="/login" />;
   }
   
-  // Vérifier les accès spécifiques
-  const path = window.location.pathname;
+  // IMPORTANT: Traitement spécial pour les détails du projet
+  if (path.includes('/project-detail/')) {
+    console.log('RoleBasedRoute - Page de détail du projet détectée:', path);
+    // Autoriser l'accès à tous les utilisateurs authentifiés aux détails du projet
+    return <Layout>{children}</Layout>;
+  }
   
   // Les administrateurs ont accès à tout
   if (isAdmin || userRole === 'admin') {
@@ -58,35 +71,30 @@ function RoleBasedRoute({ children, allowedRoles }: { children: React.ReactNode,
     return <Layout>{children}</Layout>;
   }
   
-  // Vérifier les accès spécifiques en fonction du chemin
-  if (path.includes('/dashboard')) {
-    // Tout utilisateur authentifié a accès au tableau de bord
-    console.log('RoleBasedRoute - Accès au tableau de bord accordé');
-    return <Layout>{children}</Layout>;
-  }
+  // Vérification basée sur les rôles autorisés
+  const hasAccess = allowedRoles.some(role => {
+    switch (role) {
+      case 'admin':
+        return isAdmin || userRole === 'admin';
+      case 'user':
+        return true; // Tout utilisateur connecté
+      case 'entries':
+        return hasEntriesAccess;
+      case 'expenses':
+        return hasExpensesAccess;
+      default:
+        return false;
+    }
+  });
   
-  // Accès aux entrées, historique des entrées, remboursement PCA et aux projets pour les utilisateurs avec Dep-1234
-  if (hasEntriesAccess && (path.includes('/inflow') || path.includes('/projects') || path.includes('/closing') || path.includes('/pca-reimbursement'))) {
-    console.log('RoleBasedRoute - Accès aux entrées/projets/clôture/remboursement PCA accordé');
-    return <Layout>{children}</Layout>;
-  }
+  console.log('RoleBasedRoute - Résultat de vérification d\'accès:', hasAccess);
   
-  // Accès aux historiques pour les utilisateurs avec Dep-12345
-  const hasHistoryAccess = localStorage.getItem('accessHistory') === 'true';
-  if (hasHistoryAccess && (path.includes('/inflow/history') || path.includes('/expenses/history'))) {
-    console.log('RoleBasedRoute - Accès aux historiques (entrées/dépenses) accordé');
-    return <Layout>{children}</Layout>;
-  }
-  
-  // Accès aux dépenses, articles, unités, fournisseurs pour les utilisateurs avec Exp-1234
-  if (hasExpensesAccess && (path.includes('/expenses') || path.includes('/articles') || 
-      path.includes('/units') || path.includes('/suppliers'))) {
-    console.log('RoleBasedRoute - Accès aux dépenses/articles/unités/fournisseurs accordé');
+  if (hasAccess) {
     return <Layout>{children}</Layout>;
   }
   
   // Si on arrive ici, c'est que l'utilisateur n'a pas les droits nécessaires
-  console.log('RoleBasedRoute - Accès refusé');
+  console.log('RoleBasedRoute - Accès refusé, redirection vers dashboard');
   // Rediriger l'utilisateur standard vers le tableau de bord
   return <Navigate to="/dashboard" />;
 }
@@ -112,7 +120,7 @@ function App() {
           <Route
             path="/projects"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'user']}>
+              <RoleBasedRoute allowedRoles={['admin', 'entries']}>
                 <Projects />
               </RoleBasedRoute>
             }
@@ -120,10 +128,15 @@ function App() {
           <Route
             path="/projects/:projectId"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'user']}>
-                <ProjectDetails />
+              <RoleBasedRoute allowedRoles={['admin', 'entries']}>
+                <ProjectDetail />
               </RoleBasedRoute>
             }
+          />
+          {/* Route spéciale pour le détail du projet - pas de vérification de rôle */}
+          <Route
+            path="/project-detail/:projectId"
+            element={ <RoleBasedRoute allowedRoles={['admin', 'entries']}><ProjectDetail /></RoleBasedRoute>}
           />
           <Route
             path="/categories"
@@ -136,7 +149,7 @@ function App() {
           <Route
             path="/articles"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'user']}>
+              <RoleBasedRoute allowedRoles={['admin', 'expenses']}>
                 <Articles />
               </RoleBasedRoute>
             }
@@ -144,7 +157,7 @@ function App() {
           <Route
             path="/units"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'user']}>
+              <RoleBasedRoute allowedRoles={['admin', 'expenses']}>
                 <Units />
               </RoleBasedRoute>
             }
@@ -152,7 +165,7 @@ function App() {
           <Route
             path="/suppliers"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'user']}>
+              <RoleBasedRoute allowedRoles={['admin', 'expenses']}>
                 <Suppliers />
               </RoleBasedRoute>
             }
@@ -160,7 +173,7 @@ function App() {
           <Route
             path="/inflow"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'user']}>
+              <RoleBasedRoute allowedRoles={['admin', 'entries']}>
                 <CashInflow />
               </RoleBasedRoute>
             }
@@ -168,7 +181,7 @@ function App() {
           <Route
             path="/expenses"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'user']}>
+              <RoleBasedRoute allowedRoles={['admin', 'expenses']}>
                 <Expenses />
               </RoleBasedRoute>
             }
@@ -176,7 +189,7 @@ function App() {
           <Route
             path="/expenses/history"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'user']}>
+              <RoleBasedRoute allowedRoles={['admin', 'expenses',"entries"]}>
                 <ExpenseHistory />
               </RoleBasedRoute>
             }
@@ -184,7 +197,7 @@ function App() {
           <Route
             path="/inflow/history"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'user']}>
+              <RoleBasedRoute allowedRoles={['admin', 'entries','expenses']}>
                 <CashInflowHistory />
               </RoleBasedRoute>
             }
@@ -200,7 +213,7 @@ function App() {
           <Route
             path="/pca-reimbursement"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'user']}>
+              <RoleBasedRoute allowedRoles={['admin', 'expenses']}>
                 <PCAReimbursement />
               </RoleBasedRoute>
             }
@@ -208,7 +221,7 @@ function App() {
           <Route
             path="/closing"
             element={
-              <RoleBasedRoute allowedRoles={['admin', 'user']}>
+              <RoleBasedRoute allowedRoles={['admin', 'entries']}>
                 <Closing />
               </RoleBasedRoute>
             }

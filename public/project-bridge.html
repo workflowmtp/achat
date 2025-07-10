@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chargement des détails du projet...</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f5f5f5;
+            flex-direction: column;
+        }
+        .loader {
+            border: 6px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 6px solid #3498db;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        h3 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        p {
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="loader"></div>
+    <h3>Chargement des détails du projet...</h3>
+    <p>Veuillez patienter pendant que nous récupérons les informations.</p>
+
+    <script>
+        // Récupérer l'ID du projet depuis l'URL
+        function getProjectIdFromUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('id');
+        }
+
+        // Fonction pour accéder directement à la page de détail
+        function accessProjectDetail() {
+            const projectId = getProjectIdFromUrl();
+            if (!projectId) {
+                console.error("ID du projet manquant");
+                window.location.href = "/projects";
+                return;
+            }
+
+            // Stocker l'ID temporairement dans localStorage
+            localStorage.setItem('directAccessProjectId', projectId);
+            
+            // Ajouter des logs pour debug
+            console.log('Redirection vers le détail du projet ID:', projectId);
+            
+            try {
+                // Rediriger vers la page principale qui va charger le composant directement
+                // Utiliser chemin complet pour éviter les problèmes de routes relatives
+                const baseUrl = window.location.origin;
+                window.location.href = baseUrl + "/project-detail/" + projectId;
+            } catch (e) {
+                console.error('Erreur lors de la redirection:', e);
+                // Fallback si la redirection échoue
+                window.location.href = "/projects";
+            }
+        }
+
+        // Exécuter après chargement de la page
+        window.onload = function() {
+            setTimeout(accessProjectDetail, 500); // Délai court pour afficher le chargement
+        };
+    </script>
+</body>
+</html>

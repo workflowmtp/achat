@@ -30,10 +30,12 @@ interface Expense {
   userId: string;
   projectId?: string;
   projectName?: string;
+  status?: string; // 'pending' ou 'validated'
 }
 
 export default function Dashboard() {
-  const [currentBalance, setCurrentBalance] = useState(0);
+  const [currentBalance, setCurrentBalance] = useState(0); // Solde estimé (toutes dépenses)
+  const [effectiveBalance, setEffectiveBalance] = useState(0); // Solde effectif (dépenses validées uniquement)
   const [dailyInflow, setDailyInflow] = useState(0);
   const [dailyExpenses, setDailyExpenses] = useState(0);
   const [dailyTransactions, setDailyTransactions] = useState(0);
@@ -99,11 +101,17 @@ export default function Dashboard() {
       const expensesQuery = query(expensesRef);
       
       const expensesSnapshot = await getDocs(expensesQuery);
-      const expenses = expensesSnapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id,
-        items: []
-      })) as unknown as Expense[];
+      const expenses = expensesSnapshot.docs.map(doc => {
+        const data = doc.data();
+        console.log(`Dépense ${doc.id} - données brutes:`, data);
+        return {
+          ...data,
+          id: doc.id,
+          items: []
+        };
+      }) as unknown as Expense[];
+      
+      console.log('Toutes les dépenses après récupération:', expenses);
       
       // Fetch all expense items
       const itemsRef = collection(db, 'expense_items');
@@ -119,7 +127,7 @@ export default function Dashboard() {
         expense.items = allItems.filter(item => item.expenseId === expense.id);
       });
       
-      // Calculate total expenses
+      // Calculer les dépenses totales (toutes les dépenses, validées ou non)
       const totalExpenses = expenses.reduce((sum, expense) => {
         const expenseTotal = expense.items.reduce((itemSum, item) => {
           return itemSum + (item.quantity * item.unitPrice);
@@ -127,7 +135,30 @@ export default function Dashboard() {
         return sum + expenseTotal;
       }, 0);
       
-      // Calculate today's expenses
+      // Calculer les dépenses validées uniquement
+      console.log('Toutes les dépenses avant filtrage:', expenses.map(e => ({ id: e.id, status: e.status })));
+      
+      // Vérifier les valeurs possibles du statut
+      const statusValues = [...new Set(expenses.map(e => e.status))];
+      console.log('Valeurs de statut présentes dans les dépenses:', statusValues);
+      
+      // Filtrer les dépenses validées (vérifier plusieurs valeurs possibles)
+      const validatedExpenses = expenses.filter(expense => {
+        // Vérifier si le statut est 'validated', 'valid' ou true (convertir en string pour éviter les erreurs de type)
+        const status = String(expense.status).toLowerCase();
+        return status === 'validated' || status === 'valid' || status === 'true';
+      });
+      
+      console.log('Dépenses validées après filtrage:', validatedExpenses.map(e => ({ id: e.id, status: e.status })));
+      
+      const totalValidatedExpenses = validatedExpenses.reduce((sum, expense) => {
+        const expenseTotal = expense.items.reduce((itemSum, item) => {
+          return itemSum + (item.quantity * item.unitPrice);
+        }, 0);
+        return sum + expenseTotal;
+      }, 0);
+      
+      // Calculer les dépenses du jour
       const todayExpenses = expenses.filter(expense => {
         return expense.date >= startOfToday && expense.date <= endOfToday;
       });
@@ -151,8 +182,11 @@ export default function Dashboard() {
         }
       });
       
-      // Calculate current balance
-      const currentBalance = totalInflow - totalExpenses;
+      // Calculer le solde estimé (avec toutes les dépenses)
+      const estimatedBalance = totalInflow - totalExpenses;
+      
+      // Calculer le solde effectif (uniquement avec les dépenses validées)
+      const effectiveBalanceValue = totalInflow - totalValidatedExpenses;
       
       // Calculate daily transactions count
       const dailyTransactionsCount = todayInflow.length + todayExpenses.length;
@@ -162,9 +196,12 @@ export default function Dashboard() {
       // Logs de débogage
       console.log('Entrées récentes récupérées:', sortedInflows);
       console.log('Dépenses récentes récupérées:', sortedExpenses);
+      console.log('Solde estimé (toutes dépenses):', estimatedBalance);
+      console.log('Solde effectif (dépenses validées uniquement):', effectiveBalanceValue);
       
       // Update state
-      setCurrentBalance(currentBalance);
+      setCurrentBalance(estimatedBalance);
+      setEffectiveBalance(effectiveBalanceValue);
       setDailyInflow(todayInflowTotal);
       setDailyExpenses(todayExpensesTotal);
       setDailyTransactions(dailyTransactionsCount);
@@ -196,7 +233,8 @@ export default function Dashboard() {
   };
 
   const stats = [
-    { name: 'Solde actuel', value: formatPrice(currentBalance), icon: Euro, color: 'bg-blue-500' },
+    { name: 'Solde estimé', value: formatPrice(currentBalance), icon: Euro, color: 'bg-blue-500', tooltip: 'Solde incluant toutes les dépenses (validées et non validées)' },
+    { name: 'Solde réel', value: formatPrice(effectiveBalance), icon: Euro, color: 'bg-green-700', tooltip: 'Ensemble des entrées moins les dépenses avec statut validé uniquement' },
     { name: 'Entrées du jour', value: formatPrice(dailyInflow), icon: TrendingUp, color: 'bg-green-500' },
     { name: 'Dépenses du jour', value: formatPrice(dailyExpenses), icon: TrendingDown, color: 'bg-red-500' },
     { name: 'Dette PCA', value: loadingPCADebt ? 'Chargement...' : formatPrice(pcaDebt), icon: AlertCircle, color: 'bg-orange-500' },
@@ -209,7 +247,7 @@ export default function Dashboard() {
         {stats.map((stat) => {
           const Icon = stat.icon;
           return (
-            <div key={stat.name} className="bg-white rounded-lg shadow p-6">
+            <div key={stat.name} className="bg-white rounded-lg shadow p-6" title={stat.tooltip || ''}>
               <div className="flex items-center">
                 <div className={`${stat.color} rounded-full p-3`}>
                   <Icon className="h-6 w-6 text-white" />
@@ -217,6 +255,7 @@ export default function Dashboard() {
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-500">{stat.name}</p>
                   <p className="text-lg font-semibold text-gray-900">{stat.value}</p>
+                  {stat.tooltip && <p className="text-xs text-gray-400 mt-1">{stat.tooltip}</p>}
                 </div>
               </div>
             </div>

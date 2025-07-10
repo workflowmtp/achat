@@ -17,6 +17,7 @@ export default function Units() {
   const [description, setDescription] = useState('');
   const [error, setError] = useState('');
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
+  const [showModal, setShowModal] = useState(false);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -77,8 +78,7 @@ export default function Units() {
       }
 
       // Reset form
-      setName('');
-      setDescription('');
+      handleCancelEdit();
     } catch (err) {
       console.error("Erreur lors de l'opération sur l'unité:", err);
       setError("Erreur lors de l'opération sur l'unité");
@@ -89,14 +89,14 @@ export default function Units() {
     setEditingUnit(unit);
     setName(unit.name);
     setDescription(unit.description || '');
-    setError('');
+    setShowModal(true);
   };
 
   const handleCancelEdit = () => {
     setEditingUnit(null);
     setName('');
     setDescription('');
-    setError('');
+    setShowModal(false);
   };
 
   const handleDelete = async (unitId: string) => {
@@ -115,73 +115,108 @@ export default function Units() {
     <div>
       <h2 className="text-2xl font-bold mb-6">Gestion des Unités</h2>
 
-      <form onSubmit={handleSubmit} className="mb-8 bg-white rounded-lg shadow-lg p-8">
-        {error && (
-          <div className="mb-6 flex items-center bg-red-50 border-l-4 border-red-400 p-4 rounded-r" role="alert">
-            <AlertCircle className="h-5 w-5 text-red-400 mr-2" />
-            <span className="text-red-700">{error}</span>
-          </div>
-        )}
+      <div className="mb-4 flex justify-between items-center">
+        <button
+          onClick={() => {
+            setEditingUnit(null);
+            setName('');
+            setDescription('');
+            setError('');
+            setShowModal(true);
+          }}
+          className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out"
+        >
+          <Plus className="w-5 h-5 mr-2" />
+          Ajouter une unité
+        </button>
+      </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="space-y-2">
-            <label className="block text-sm font-medium mb-1">
-              Nom de l'unité <span className="text-red-500">*</span>
-              <span className="text-xs text-gray-500 ml-1">(obligatoire)</span>
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="block w-full px-4 py-3 rounded-lg bg-blue-50 border border-gray-300 focus:border-blue-500 focus:ring-blue-500 focus:ring-2 transition duration-150 ease-in-out"
-              placeholder="Nom de l'unité"
-            />
-          </div>
-          
-          <div className="space-y-2">
-            <label className="block text-sm font-medium mb-1">
-              Description
-              <span className="text-xs text-gray-500 ml-1">(optionnel)</span>
-            </label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="block w-full px-4 py-3 rounded-lg bg-blue-50 border border-gray-300 focus:border-blue-500 focus:ring-blue-500 focus:ring-2 transition duration-150 ease-in-out"
-              placeholder="Description de l'unité"
-            />
+      {/* Modal pour le formulaire */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 overflow-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-screen overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-gray-800">
+                {editingUnit ? 'Modifier l\'unité' : 'Ajouter une nouvelle unité'}
+              </h3>
+              <button
+                onClick={handleCancelEdit}
+                className="text-gray-500 hover:text-gray-700 focus:outline-none"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              <form onSubmit={handleSubmit}>
+                {error && (
+                  <div className="mb-6 flex items-center bg-red-50 border-l-4 border-red-400 p-4 rounded-r" role="alert">
+                    <AlertCircle className="h-5 w-5 text-red-400 mr-2" />
+                    <span className="text-red-700">{error}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium mb-1">
+                      Nom de l'unité <span className="text-red-500">*</span>
+                      <span className="text-xs text-gray-500 ml-1">(obligatoire)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="block w-full px-4 py-3 rounded-lg bg-blue-50 border border-gray-300 focus:border-blue-500 focus:ring-blue-500 focus:ring-2 transition duration-150 ease-in-out"
+                      placeholder="Nom de l'unité"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium mb-1">
+                      Description
+                      <span className="text-xs text-gray-500 ml-1">(optionnel)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      className="block w-full px-4 py-3 rounded-lg bg-blue-50 border border-gray-300 focus:border-blue-500 focus:ring-blue-500 focus:ring-2 transition duration-150 ease-in-out"
+                      placeholder="Description de l'unité"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-8 flex justify-end space-x-4">
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="inline-flex items-center px-6 py-3 border border-gray-300 text-base font-medium rounded-lg shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out"
+                  >
+                    <X className="w-5 h-5 mr-2" />
+                    Annuler
+                  </button>
+                  <button
+                    type="submit"
+                    className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out"
+                  >
+                    {editingUnit ? (
+                      <>
+                        <Save className="w-5 h-5 mr-2" />
+                        Mettre à jour l'unité
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-5 h-5 mr-2" />
+                        Créer l'unité
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
-
-        <div className="mt-8 flex space-x-4">
-          <button
-            type="submit"
-            className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out"
-          >
-            {editingUnit ? (
-              <>
-                <Save className="w-5 h-5 mr-2" />
-                Mettre à jour l'unité
-              </>
-            ) : (
-              <>
-                <Plus className="w-5 h-5 mr-2" />
-                Créer l'unité
-              </>
-            )}
-          </button>
-          {editingUnit && (
-            <button
-              type="button"
-              onClick={handleCancelEdit}
-              className="inline-flex items-center px-6 py-3 border border-gray-300 text-base font-medium rounded-lg shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out"
-            >
-              <X className="w-5 h-5 mr-2" />
-              Annuler
-            </button>
-          )}
-        </div>
-      </form>
+      )}
 
       <div className="bg-white rounded-lg shadow-lg overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">

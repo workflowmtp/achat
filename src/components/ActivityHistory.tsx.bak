@@ -1,0 +1,134 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { format } from 'date-fns';
+import { collection, getDocs, query, where, orderBy, Timestamp } from 'firebase/firestore';
+import { db } from '../firebase';
+import { useAuth } from './auth/AuthContext';
+import { Download, Filter, Eye, X } from 'lucide-react';
+import { ActivityType, EntityType } from '../utils/activityLogger';
+
+// Interface pour les logs d'activité
+interface ActivityLog {
+  id: string;
+  timestamp: string;
+  userId: string;
+  userName: string;
+  activityType: ActivityType;
+  entityType: EntityType;
+  entityId: string;
+  entityData: any;
+  details?: string;
+  projectId?: string;
+  projectName?: string;
+}
+
+// Interface pour les projets
+interface Project {
+  id: string;
+  name: string;
+}
+
+// Interface pour les utilisateurs
+interface User {
+  id: string;
+  displayName: string;
+  email: string;
+}
+
+const ActivityHistory: React.FC = () => {
+  // États pour les données
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [filteredLogs, setFilteredLogs] = useState<ActivityLog[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  
+  // États pour les filtres
+  const [selectedProject, setSelectedProject] = useState<string>('');
+  const [selectedUser, setSelectedUser] = useState<string>('');
+  const [selectedEntityType, setSelectedEntityType] = useState<string>('');
+  const [selectedActivityType, setSelectedActivityType] = useState<string>('');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  
+  // États pour le tri
+  const [sortField, setSortField] = useState<string>('timestamp');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  
+  // États pour l'affichage des détails
+  const [selectedLog, setSelectedLog] = useState<ActivityLog | null>(null);
+  
+  // États pour le chargement et les erreurs
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  const { user } = useAuth();
+  
+  // Vérification des droits d'administration
+  const userRole = localStorage.getItem('userRole') || '';
+  const isAdmin = localStorage.getItem('isAdmin') === 'true' || userRole === 'admin';
+  
+  // Fonction pour charger les projets
+  const fetchProjects = useCallback(async () => {
+    try {
+      const projectsRef = collection(db, 'projects');
+      const snapshot = await getDocs(projectsRef);
+      const projectsList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().name
+      }));
+      setProjects(projectsList);
+    } catch (error) {
+      console.error('Erreur lors du chargement des projets:', error);
+      setError('Erreur lors du chargement des projets');
+    }
+  }, []);
+  
+  // Fonction pour charger les utilisateurs
+  const fetchUsers = useCallback(async () => {
+    try {
+      const usersRef = collection(db, 'users');
+      const snapshot = await getDocs(usersRef);
+      const usersList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        displayName: doc.data().displayName || doc.data().email,
+        email: doc.data().email
+      }));
+      setUsers(usersList);
+    } catch (error) {
+      console.error('Erreur lors du chargement des utilisateurs:', error);
+      setError('Erreur lors du chargement des utilisateurs');
+    }
+  }, []);
+  
+  // Fonction pour charger les logs d'activité
+  const fetchActivityLogs = useCallback(async () => {
+    if (!isAdmin) {
+      setError('Accès non autorisé');
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      const logsRef = query(
+        collection(db, 'activity_logs'),
+        orderBy('timestamp', 'desc')
+      );
+      
+      const snapshot = await getDocs(logsRef);
+      const logsList = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      })) as ActivityLog[];
+      
+      setActivityLogs(logsList);
+      setFilteredLogs(logsList);
+      setLoading(false);
+    } catch (error) {
+      console.error('Erreur lors du chargement des logs d\'activité:', error);
+      setError('Erreur lors du chargement des logs d\'activité');
+      setLoading(false);
+    }
+  }, []);
+};
+
+export default ActivityHistory;

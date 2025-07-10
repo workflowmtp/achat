@@ -12,7 +12,12 @@ export enum ActivityType {
 export enum EntityType {
   EXPENSE = 'expense',
   EXPENSE_ITEM = 'expense_item',
-  CASH_INFLOW = 'cash_inflow'
+  CASH_INFLOW = 'cash_inflow',
+  PROJECT = 'project',
+  SUPPLIER = 'supplier',
+  UNIT = 'unit',
+  USER = 'user',
+  CLOSURE = 'closure'
 }
 
 // Interface pour les logs d'activité

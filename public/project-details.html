@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Détails du Projet</title>
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f9fafb;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 4px solid #3b82f6;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <!-- En-tête -->
+        <header class="bg-white shadow rounded-lg mb-6">
+            <div class="px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <button id="backButton" class="text-blue-600 hover:text-blue-800 mr-4">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-arrow-left-circle"><circle cx="12" cy="12" r="10"></circle><polyline points="12 8 8 12 12 16"></polyline><line x1="16" y1="12" x2="8" y2="12"></line></svg>
+                        </button>
+                        <div>
+                            <h1 id="projectName" class="text-2xl font-semibold text-gray-900">Chargement...</h1>
+                            <p id="projectDescription" class="text-sm text-gray-500">...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Contenu principal -->
+        <div id="projectContent" class="bg-white shadow rounded-lg p-6">
+            <div id="loading" class="text-center py-10">
+                <div class="loader"></div>
+                <p class="mt-4 text-gray-600">Chargement des détails du projet...</p>
+            </div>
+            
+            <div id="error" class="hidden bg-red-50 border border-red-300 rounded-md p-4">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <div class="ml-3">
+                        <h3 class="text-sm font-medium text-red-800">Une erreur est survenue</h3>
+                        <p id="errorMessage" class="text-sm text-red-700 mt-1"></p>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="projectDetails" class="hidden">
+                <h2 class="text-lg font-medium text-gray-900 mb-4">Informations du projet</h2>
+                <div class="border-t border-gray-200 pt-4">
+                    <dl class="divide-y divide-gray-200">
+                        <div class="py-4 grid grid-cols-3 gap-4">
+                            <dt class="text-sm font-medium text-gray-500">Nom du projet</dt>
+                            <dd id="detailName" class="text-sm text-gray-900 col-span-2"></dd>
+                        </div>
+                        <div class="py-4 grid grid-cols-3 gap-4">
+                            <dt class="text-sm font-medium text-gray-500">Description</dt>
+                            <dd id="detailDescription" class="text-sm text-gray-900 col-span-2"></dd>
+                        </div>
+                        <div class="py-4 grid grid-cols-3 gap-4">
+                            <dt class="text-sm font-medium text-gray-500">Date de début</dt>
+                            <dd id="detailStartDate" class="text-sm text-gray-900 col-span-2"></dd>
+                        </div>
+                        <div id="endDateRow" class="py-4 grid grid-cols-3 gap-4">
+                            <dt class="text-sm font-medium text-gray-500">Date de fin</dt>
+                            <dd id="detailEndDate" class="text-sm text-gray-900 col-span-2"></dd>
+                        </div>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCe4Ky-LPyXAyZmP0u5dBm8EQ2voNDa-l0",
+            authDomain: "multiprint-achat.firebaseapp.com",
+            projectId: "multiprint-achat",
+            storageBucket: "multiprint-achat.appspot.com",
+            messagingSenderId: "435481653191",
+            appId: "1:435481653191:web:a0d30a0620e33f5c74bcaf"
+        };
+
+        // Initialiser Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        
+        // Récupérer l'ID du projet depuis l'URL
+        function getProjectIdFromUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('id');
+        }
+        
+        // Formater une date
+        function formatDate(dateString) {
+            if (!dateString) return '-';
+            const date = new Date(dateString);
+            return new Intl.DateTimeFormat('fr-FR', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            }).format(date);
+        }
+
+        // Charger les détails du projet
+        async function loadProjectDetails() {
+            const projectId = getProjectIdFromUrl();
+            console.log('Chargement du projet avec ID:', projectId);
+            
+            if (!projectId) {
+                showError('ID du projet manquant dans l\'URL');
+                return;
+            }
+            
+            try {
+                const projectDoc = await db.collection('projects').doc(projectId).get();
+                
+                if (!projectDoc.exists) {
+                    showError('Le projet demandé n\'existe pas');
+                    return;
+                }
+                
+                const project = projectDoc.data();
+                console.log('Projet chargé:', project);
+                
+                // Afficher les détails du projet
+                document.getElementById('projectName').textContent = project.name || 'Sans nom';
+                document.getElementById('projectDescription').textContent = project.description || '';
+                
+                document.getElementById('detailName').textContent = project.name || 'Sans nom';
+                document.getElementById('detailDescription').textContent = project.description || '';
+                document.getElementById('detailStartDate').textContent = formatDate(project.startDate);
+                
+                if (project.endDate) {
+                    document.getElementById('detailEndDate').textContent = formatDate(project.endDate);
+                } else {
+                    document.getElementById('endDateRow').classList.add('hidden');
+                }
+                
+                // Masquer le chargement et afficher les détails
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('projectDetails').classList.remove('hidden');
+            } catch (error) {
+                console.error('Erreur lors du chargement des détails du projet:', error);
+                showError('Erreur lors du chargement des détails du projet');
+            }
+        }
+
+        // Afficher une erreur
+        function showError(message) {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('error').classList.remove('hidden');
+            document.getElementById('errorMessage').textContent = message;
+        }
+
+        // Ajouter les événements
+        document.getElementById('backButton').addEventListener('click', function() {
+            window.location.href = '/projects';
+        });
+
+        // Vérifier l'authentification et charger les données
+        firebase.auth().onAuthStateChanged(function(user) {
+            if (user) {
+                loadProjectDetails();
+            } else {
+                window.location.href = '/login';
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { format } from 'date-fns';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './auth/AuthContext';
-import { Download } from 'lucide-react';
+import { Download, Search, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface Project {
   id: string;
@@ -32,15 +32,22 @@ export default function CashInflowHistory() {
   const [selectedSource, setSelectedSource] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  
+  // États pour la recherche, pagination et tri
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [sortField, setSortField] = useState<keyof CashEntry>('date');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const { user } = useAuth();
   
-  const sources = [
+  const sources = useMemo(() => [
     { id: 'rebus', label: 'Compte des rebus' },
     { id: 'bank', label: 'Compte bancaire' },
     { id: 'pca', label: 'Compte PCA' },
     { id: 'granule', label: 'Vente Granule' },
     { id: 'espece', label: 'Vente d\'espèce client' }
-  ];
+  ], []);
 
   // Fonction pour récupérer les projets
   const fetchProjects = useCallback(async () => {
@@ -101,8 +108,8 @@ export default function CashInflowHistory() {
     }
   }, [user, fetchProjects, fetchEntries]);
 
-  // Fonction pour filtrer les entrées avec useCallback
-  const filterEntries = useCallback(() => {
+  // Filtrer les entrées avec useMemo incluant recherche et tri
+  const filteredSortedEntries = useMemo(() => {
     let filtered = [...entries];
     
     // Filtrer par date de début
@@ -125,13 +132,81 @@ export default function CashInflowHistory() {
       filtered = filtered.filter(entry => entry.source === selectedSource);
     }
     
-    setFilteredEntries(filtered);
-  }, [entries, startDate, endDate, selectedProject, selectedSource]);
+    // Filtrer par terme de recherche
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(entry => {
+        const project = projects.find(p => p.id === entry.projectId);
+        const source = sources.find(s => s.id === entry.source);
+        return (
+          entry.description?.toLowerCase().includes(searchLower) ||
+          String(entry.amount).includes(searchLower) ||
+          (project?.name?.toLowerCase().includes(searchLower)) ||
+          (source?.label?.toLowerCase().includes(searchLower)) ||
+          (entry.date && format(new Date(entry.date), 'dd/MM/yyyy').includes(searchTerm))
+        );
+      });
+    }
+    
+    // Version simplifiée du tri
+    return filtered.sort((a, b) => {
+      if (sortField === 'date') {
+        try {
+          const dateA = a.date ? new Date(a.date).getTime() : 0;
+          const dateB = b.date ? new Date(b.date).getTime() : 0;
+          return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+        } catch (error) {
+          console.error("Erreur de tri de date", error);
+          return 0;
+        }
+      }
+      
+      if (sortField === 'amount') {
+        try {
+          const amountA = a.amount || 0;
+          const amountB = b.amount || 0;
+          return sortDirection === 'asc' ? amountA - amountB : amountB - amountA;
+        } catch (error) {
+          console.error("Erreur de tri de montant", error);
+          return 0;
+        }
+      }
+      
+      try {
+        const valueA = String(a[sortField] || '').toLowerCase();
+        const valueB = String(b[sortField] || '').toLowerCase();
+        return sortDirection === 'asc' 
+          ? valueA.localeCompare(valueB)
+          : valueB.localeCompare(valueA);
+      } catch (error) {
+        console.error("Erreur de tri", error);
+        return 0;
+      }
+    });
+  }, [entries, startDate, endDate, selectedProject, selectedSource, searchTerm, projects, sources, sortField, sortDirection]);
 
-  // Appliquer les filtres lorsque les critères changent
+  // Mettre à jour filteredEntries quand filteredSortedEntries change
   useEffect(() => {
-    filterEntries();
-  }, [startDate, endDate, selectedProject, selectedSource, filterEntries]);
+    setFilteredEntries(filteredSortedEntries);
+  }, [filteredSortedEntries]);
+  
+  // Obtenir les entrées pour la page courante
+  const paginatedEntries = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredSortedEntries.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredSortedEntries, currentPage, itemsPerPage]);
+  
+  // Calculer le nombre total de pages
+  const totalPages = Math.ceil(filteredSortedEntries.length / itemsPerPage);
+  
+  // Générer les numéros de page pour la pagination
+  const pageNumbers = useMemo(() => {
+    const pages = [];
+    for (let i = 1; i <= totalPages; i++) {
+      pages.push(i);
+    }
+    return pages;
+  }, [totalPages]);
 
   // Fonction pour réinitialiser les filtres
   const resetFilters = () => {
@@ -139,7 +214,27 @@ export default function CashInflowHistory() {
     setEndDate('');
     setSelectedProject('');
     setSelectedSource('');
-    setFilteredEntries(entries);
+    setSearchTerm('');
+    setCurrentPage(1);
+  };
+  
+  // Fonction pour trier les données
+  const handleSort = (field: keyof CashEntry) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+    setCurrentPage(1); // Retour à la première page lors d'un changement de tri
+  };
+  
+  // Obtenir l'icône de tri pour une colonne
+  const getSortIcon = (field: keyof CashEntry) => {
+    if (sortField !== field) {
+      return null;
+    }
+    return sortDirection === 'asc' ? <ArrowUp size={16} /> : <ArrowDown size={16} />;
   };
 
   // Fonction pour exporter les données en CSV
@@ -192,7 +287,7 @@ export default function CashInflowHistory() {
   };
 
   // Calculer le total des entrées filtrées
-  const totalAmount = filteredEntries.reduce((sum, entry) => sum + entry.amount, 0);
+  const totalAmount = filteredSortedEntries.reduce((sum, entry) => sum + entry.amount, 0);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -209,6 +304,25 @@ export default function CashInflowHistory() {
           {success}
         </div>
       )}
+      
+      {/* Barre de recherche */}
+      <div className="bg-white shadow-md rounded-lg p-6 mb-6">
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search size={18} className="text-gray-400" />
+          </div>
+          <input
+            type="text"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Rechercher par description, projet, source, montant ou date..."
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1); // Retour à la première page lors d'une recherche
+            }}
+          />
+        </div>
+      </div>
       
       {/* Filtres */}
       <div className="bg-white shadow-md rounded-lg p-6 mb-6">
@@ -281,7 +395,7 @@ export default function CashInflowHistory() {
           Total des entrées filtrées: <span className="text-blue-700">{totalAmount.toFixed(2)} DH</span>
         </p>
         <p className="text-sm text-gray-600">
-          Nombre d'entrées: {filteredEntries.length}
+          Nombre d'entrées: {filteredSortedEntries.length}
         </p>
       </div>
       
@@ -291,16 +405,51 @@ export default function CashInflowHistory() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Montant (DH)</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                  onClick={() => handleSort('date')}
+                >
+                  <div className="flex items-center">
+                    Date
+                    <span className="ml-1">{getSortIcon('date')}</span>
+                  </div>
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Référence
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                  onClick={() => handleSort('amount')}
+                >
+                  <div className="flex items-center">
+                    Montant (DH)
+                    <span className="ml-1">{getSortIcon('amount')}</span>
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                  onClick={() => handleSort('source')}
+                >
+                  <div className="flex items-center">
+                    Source
+                    <span className="ml-1">{getSortIcon('source')}</span>
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                  onClick={() => handleSort('description')}
+                >
+                  <div className="flex items-center">
+                    Description
+                    <span className="ml-1">{getSortIcon('description')}</span>
+                  </div>
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Projet</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredEntries.length > 0 ? (
-                filteredEntries.map(entry => {
+              {paginatedEntries.length > 0 ? (
+                paginatedEntries.map(entry => {
                   const project = projects.find(p => p.id === entry.projectId);
                   const source = sources.find(s => s.id === entry.source);
                   
@@ -308,6 +457,9 @@ export default function CashInflowHistory() {
                     <tr key={entry.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {format(new Date(entry.date), 'dd/MM/yyyy')}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {entry?.id?.substring(0, 8)?.toUpperCase() || 'N/A'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
                         {entry.amount.toFixed(2)}
@@ -326,7 +478,7 @@ export default function CashInflowHistory() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
+                  <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
                     Aucune entrée trouvée
                   </td>
                 </tr>
@@ -334,6 +486,65 @@ export default function CashInflowHistory() {
             </tbody>
           </table>
         </div>
+        
+        {/* Pagination */}
+        {filteredSortedEntries.length > 0 && (
+          <div className="py-4 px-6 border-t border-gray-200 bg-gray-50 flex flex-col sm:flex-row justify-between items-center">
+            <div className="flex items-center mb-4 sm:mb-0">
+              <span className="text-sm text-gray-700">
+                Affichage de <span className="font-medium">{((currentPage - 1) * itemsPerPage) + 1}</span> à <span className="font-medium">
+                  {Math.min(currentPage * itemsPerPage, filteredSortedEntries.length)}</span> sur <span className="font-medium">{filteredSortedEntries.length}</span> entrées
+              </span>
+              
+              <div className="ml-4">
+                <select
+                  className="border border-gray-300 rounded-md text-sm pl-2 pr-7 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={itemsPerPage}
+                  onChange={(e) => {
+                    setItemsPerPage(Number(e.target.value));
+                    setCurrentPage(1); // Retour à la première page lors du changement d'éléments par page
+                  }}
+                >
+                  {[5, 10, 25, 50].map(value => (
+                    <option key={value} value={value}>
+                      {value} par page
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            
+            <div className="flex items-center space-x-1">
+              <button
+                className={`px-3 py-1 rounded-md ${currentPage === 1 ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-200'}`}
+                onClick={() => setCurrentPage(currentPage - 1)}
+                disabled={currentPage === 1}
+                aria-label="Page précédente"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              
+              {pageNumbers.map(number => (
+                <button
+                  key={number}
+                  className={`px-3 py-1 rounded-md ${currentPage === number ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-200'}`}
+                  onClick={() => setCurrentPage(number)}
+                >
+                  {number}
+                </button>
+              ))}
+              
+              <button
+                className={`px-3 py-1 rounded-md ${currentPage === totalPages ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-200'}`}
+                onClick={() => setCurrentPage(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                aria-label="Page suivante"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
